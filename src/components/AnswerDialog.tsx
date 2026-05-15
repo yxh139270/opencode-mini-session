@@ -191,9 +191,32 @@ function buildMiniMessages(state: AnswerDialogState): MiniMessage[] {
     .find((part): part is Extract<MiniPart, { type: "text" }> => part.type === "text");
 
   if (lastText) {
-    lastText.text += state.streamingAnswer;
+    const streamingTrimmed = state.streamingAnswer.trim();
+    const lastTextTrimmed = lastText.text.trim();
+
+    if (streamingTrimmed === lastTextTrimmed) {
+      // Identical content, no change needed
+    } else if (
+      streamingTrimmed.startsWith(lastTextTrimmed) &&
+      streamingTrimmed.length > lastTextTrimmed.length
+    ) {
+      // streamingAnswer contains existing text plus more (cumulative delta)
+      lastText.text = state.streamingAnswer;
+    } else if (!lastTextTrimmed.endsWith(streamingTrimmed)) {
+      // streamingAnswer is genuinely new text (incremental delta)
+      lastText.text += state.streamingAnswer;
+    }
   } else {
-    lastAssistant.parts.push({ type: "text", text: state.streamingAnswer });
+    const lastReasoning = [...lastAssistant.parts]
+      .reverse()
+      .find((part) => part.type === "reasoning");
+
+    if (
+      !lastReasoning ||
+      lastReasoning.text.trim() !== state.streamingAnswer.trim()
+    ) {
+      lastAssistant.parts.push({ type: "text", text: state.streamingAnswer });
+    }
   }
 
   return messages;
