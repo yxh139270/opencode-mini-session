@@ -6,6 +6,8 @@ export function resolveModel(
 ): ResolvedModel {
   if (modelOverride) return { model: parseModelOverride(modelOverride) };
 
+  let assistantFallback: ResolvedModel | undefined;
+
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const { info } = entries[index];
     if (info.role === "user") {
@@ -18,14 +20,18 @@ export function resolveModel(
       };
     }
 
-    return {
-      model: {
-        providerID: info.providerID,
-        modelID: info.modelID,
-      },
-      variant: info.variant,
-    };
+    if (!assistantFallback) {
+      assistantFallback = {
+        model: {
+          providerID: info.providerID,
+          modelID: info.modelID,
+        },
+        variant: info.variant,
+      };
+    }
   }
+
+  if (assistantFallback) return assistantFallback;
 
   return {};
 }

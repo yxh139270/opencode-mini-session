@@ -1,9 +1,8 @@
 /** @jsxImportSource @opentui/solid */
-import { type KeyEvent, type ScrollBoxRenderable } from "@opentui/core";
-import { useKeyboard } from "@opentui/solid";
+import { type ScrollBoxRenderable } from "@opentui/core";
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
 import type { Part } from "@opencode-ai/sdk/v2";
-import { SCROLL_LINE_DELTA, SCROLL_PAGE_DELTA, THINKING_TEXT } from "../constants";
+import { THINKING_TEXT } from "../constants";
 import type { AnswerDialogProps, AnswerDialogState, OverlayState } from "../types";
 import { extractAssistantText } from "../session";
 import { ActionButton } from "./ActionButton";
@@ -36,48 +35,12 @@ export function AnswerDialog(props: AnswerDialogProps) {
   const transcriptWidth = Math.max(20, panelWidth - 8);
   const transcriptContentWidth = Math.max(20, transcriptWidth - 5);
 
-  useKeyboard((event: KeyEvent) => {
-    if (event.ctrl || event.meta || event.option) return;
-
-    switch (event.name) {
-      case "escape":
-      case "enter":
-      case "return":
-        props.onClose();
-        return;
-      case "c":
-        if (props.canContinue) props.onContinue();
-        return;
-      case "up":
-      case "k":
-        scroller?.scrollBy(-SCROLL_LINE_DELTA);
-        return;
-      case "down":
-      case "j":
-        scroller?.scrollBy(SCROLL_LINE_DELTA);
-        return;
-      case "pageup":
-        scroller?.scrollBy(-SCROLL_PAGE_DELTA);
-        return;
-      case "pagedown":
-        scroller?.scrollBy(SCROLL_PAGE_DELTA);
-        return;
-      case "home":
-        scroller?.scrollTo(0);
-        return;
-      case "end":
-        scroller?.scrollTo(Number.MAX_SAFE_INTEGER);
-        return;
-    }
-  }, {});
-
   const messages = buildMiniMessages(props.state);
   const estimatedContentHeight =
     estimateMiniMessagesHeight(messages, props.state, transcriptContentWidth) + 4;
-  if (estimatedContentHeight > transcriptHeight - 2) {
-    props.state.scrollbarVisible = true;
-  }
-  const showScrollbar = props.state.scrollbarVisible && !props.state.loading;
+  const contentOverflows = estimatedContentHeight > transcriptHeight - 2;
+  const showScrollbar =
+    (props.state.scrollbarVisible || contentOverflows) && !props.state.loading;
 
   return (
     <box

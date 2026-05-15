@@ -63,10 +63,10 @@ All options are optional. Defaults are shown below.
 |---|---|
 | `esc` / `enter` | Close dialog |
 | `c` | Continue in main thread (only when answer is ready) |
-| `up` / `k` | Scroll up 1 line |
-| `down` / `j` | Scroll down 1 line |
-| `pageup` | Scroll up 8 lines |
-| `pagedown` | Scroll down 8 lines |
+| `up` / `k` | Scroll up 4 lines |
+| `down` / `j` | Scroll down 4 lines |
+| `pageup` | Scroll up 14 lines |
+| `pagedown` | Scroll down 14 lines |
 | `home` | Scroll to top |
 | `end` | Scroll to bottom |
 
