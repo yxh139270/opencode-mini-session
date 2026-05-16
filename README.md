@@ -2,6 +2,8 @@
 
 An OpenCode TUI plugin that opens an interactive mini temporary session for side questions, with full session context and multi-turn conversation.
 
+https://github.com/user-attachments/assets/8201b065-2569-41ba-8eb7-ac2abddad2a5
+
 ## What it does
 
 Press `alt+b` (or run `/mini` from the command palette) during any OpenCode session. A popup overlay opens immediately with a text input at the bottom. Type a question and press Enter to send it. The plugin:
