@@ -190,14 +190,11 @@ export async function startQuestion(
     continuing = true;
 
     try {
-      await api.client.session.promptAsync(
-        {
-          sessionID,
-          parts: [{ type: "text", text: buildContinuePrompt(question, answer) }],
-        },
+      await api.client.tui.appendPrompt(
+        { text: buildContinuePrompt(question, answer) },
         { throwOnError: true },
       );
-      api.ui.toast({ variant: "success", message: "Continued in the main thread." });
+      api.ui.toast({ variant: "success", message: "Side answer added to prompt." });
       await cleanup();
     } catch (cause) {
       api.ui.toast({
@@ -496,10 +493,10 @@ function buildPermissionRules(toolIDs: string[]): PermissionRuleset {
 
 function buildContinuePrompt(question: string, answer: string) {
   return [
-    "Continue the main thread using this side-question context.",
-    `Side question:\n${question}`,
-    `Side answer:\n${answer}`,
-    "Treat the side answer as draft context that you can refine or correct, then continue the main task from here.",
+    "[Context from a one-shot aside session]",
+    `Question:\n${question}`,
+    `Answer:\n${answer}`,
+    "---\n",
   ].join("\n\n");
 }
 
