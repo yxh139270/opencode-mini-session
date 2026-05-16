@@ -1,6 +1,23 @@
 /** @jsxImportSource @opentui/solid */
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
 
+function formatKeybinding(keybind: string): string {
+  const parts = keybind.split("+");
+  const base = parts[parts.length - 1];
+  const mods = parts.slice(0, -1);
+  const ctrl = mods.includes("ctrl") || mods.includes("control");
+  const alt = mods.includes("alt") || mods.includes("meta");
+  const shift = mods.includes("shift");
+  let prefix = "";
+  if (ctrl && shift) prefix = "C-S-";
+  else if (ctrl) prefix = "C-";
+  else if (alt && shift) prefix = "M-S-";
+  else if (alt) prefix = "M-";
+  else if (shift) prefix = "S-";
+  const keyName = base;
+  return `<${prefix}${keyName}>`;
+}
+
 export function HintBar(props: { api: TuiPluginApi; hideKey: string }) {
   const theme = props.api.theme.current;
 
@@ -15,11 +32,11 @@ export function HintBar(props: { api: TuiPluginApi; hideKey: string }) {
 
   return (
     <box flexDirection="row">
-      {hint("enter", "send")}
+      {hint("<S-CR>", "continue")}
       {separator()}
-      {hint(props.hideKey, "hide")}
+      {hint(formatKeybinding(props.hideKey), "hide")}
       {separator()}
-      {hint("esc/ctrl+c", "cancel")}
+      {hint("Esc/<C-c>", "cancel")}
     </box>
   );
 }

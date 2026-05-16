@@ -64,6 +64,7 @@ const tui: TuiPlugin = async (api, options) => {
     ],
     bindings: [
       { key: keybind, cmd: CMD_HIDE },
+      { key: "shift+enter", cmd: CMD_CONTINUE },
       { key: "escape", cmd: CMD_CLOSE },
       { key: "ctrl+c", cmd: CMD_CLOSE },
       { key: "pageup", cmd: CMD_PAGE_UP },
