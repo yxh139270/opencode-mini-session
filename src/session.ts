@@ -5,7 +5,7 @@ import type {
 } from "@opencode-ai/plugin/tui";
 import type { PermissionRuleset } from "@opencode-ai/sdk/v2";
 import type { Setter } from "solid-js";
-import { DEFAULT_KEYBIND, SAFE_TOOLS } from "./constants";
+import { DEFAULT_ALLOWED_TOOLS, DEFAULT_KEYBIND } from "./constants";
 import { getSessionEntries, formatFullContext } from "./context";
 import { resolveModel, formatResolvedModel } from "./model";
 import type {
@@ -26,7 +26,6 @@ type ModelSelectValue =
     };
 
 const MINI_AGENT = "general";
-const SAFE_TOOL_PERMISSION_IDS = Object.keys(SAFE_TOOLS);
 const ADDITIONAL_PERMISSION_IDS = [
   "edit",
   "bash",
@@ -93,10 +92,11 @@ export async function startQuestion(
 ) {
   const entries = getSessionEntries(api, sessionID);
   const context = formatFullContext(entries, config.tokenLimit);
-  const system = buildSystemPrompt(context);
   const toolIDs = await getAvailableToolIDs(api);
-  const permission = buildPermissionRules(toolIDs);
-  const tools = buildToolSelection(toolIDs);
+  const resolvedTools = resolveAllowedTools(config.allowedTools, toolIDs);
+  const system = buildSystemPrompt(context, resolvedTools);
+  const permission = buildPermissionRules(toolIDs, resolvedTools);
+  const tools = buildToolSelection(toolIDs, resolvedTools);
   const getResolvedModel = () => resolveModel(config.model, entries, modelPreference.get());
   const getModelName = () => formatResolvedModel(getResolvedModel());
   const hideKey = config.keybind || DEFAULT_KEYBIND;
@@ -556,13 +556,25 @@ export function extractAssistantText(
   return chunks.join("\n\n").trim();
 }
 
-function buildSystemPrompt(context: string) {
-  const toolNote =
-    "This side session is read-only. Never modify files, run write-capable tools, or change project state. You may use only the available safe read-only tools if the provided context is not enough, but prefer answering from the session context first.";
+function buildSystemPrompt(context: string, allowedTools: string[]) {
   const intro =
     "You are answering a quick side question about an ongoing coding session. Below is the conversation context from the session. Answer concisely based on what you can see.";
 
-  return `${intro} ${toolNote}\n\n<session-context>\n${context}\n</session-context>`;
+  const toolNote =
+    allowedTools.length === 0
+      ? " No tools are available in this session. Do not attempt to use any tools."
+      : ` You may only use the following tools: ${allowedTools.join(", ")}. Do not attempt to use any other tools.`;
+
+  return `${intro}${toolNote}\n\n<session-context>\n${context}\n</session-context>`;
+}
+
+function resolveAllowedTools(
+  allowedTools: string[] | null,
+  availableToolIDs: string[],
+): string[] {
+  if (allowedTools === null) return DEFAULT_ALLOWED_TOOLS;
+  if (allowedTools.includes("*")) return [...availableToolIDs];
+  return allowedTools;
 }
 
 async function getAvailableToolIDs(api: TuiPluginApi): Promise<string[]> {
@@ -579,26 +591,26 @@ async function getAvailableToolIDs(api: TuiPluginApi): Promise<string[]> {
     }
   } catch {}
 
-  return SAFE_TOOL_PERMISSION_IDS;
+  return DEFAULT_ALLOWED_TOOLS;
 }
 
-function buildToolSelection(toolIDs: string[]) {
+function buildToolSelection(toolIDs: string[], allowedTools: string[]) {
   return Object.fromEntries(
     toolIDs.map((toolID) => [
       toolID,
-      SAFE_TOOL_PERMISSION_IDS.includes(toolID),
+      allowedTools.includes(toolID),
     ]),
   );
 }
 
-function buildPermissionRules(toolIDs: string[]): PermissionRuleset {
+function buildPermissionRules(toolIDs: string[], allowedTools: string[]): PermissionRuleset {
   const permissionIDs = [
     ...new Set([...toolIDs, ...ADDITIONAL_PERMISSION_IDS]),
   ];
   return permissionIDs.map((permission) => ({
     permission,
     pattern: "*",
-    action: SAFE_TOOL_PERMISSION_IDS.includes(permission) ? "allow" : "deny",
+    action: allowedTools.includes(permission) ? "allow" : "deny",
   }));
 }
 

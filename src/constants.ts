@@ -26,3 +26,5 @@ export const SAFE_TOOLS = {
   read: true,
   webfetch: true,
 };
+
+export const DEFAULT_ALLOWED_TOOLS = Object.keys(SAFE_TOOLS);

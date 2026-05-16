@@ -6,6 +6,7 @@ export type MiniConfig = {
   model: string | null;
   tokenLimit: number;
   keybind: string | false;
+  allowedTools: string[] | null;
 };
 
 export type SessionEntry = {

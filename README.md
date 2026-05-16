@@ -44,7 +44,8 @@ Add to your OpenCode TUI config (`~/.config/opencode/tui.json`):
     ["opencode-mini-session", {
       "model": "anthropic/claude-sonnet-4.6",
       "tokenLimit": 50000,
-      "keybind": "alt+b"
+      "keybind": "alt+b",
+      "allowedTools": ["glob", "grep", "read", "list", "webfetch"]
     }]
   ]
 }
@@ -62,6 +63,18 @@ All options are optional. Defaults are shown below.
 | `model` | `string \| null` | `null` | Override model as `providerID/modelID` (e.g. `"anthropic/claude-sonnet-4-5"`). `null` auto-detects from current session. |
 | `tokenLimit` | `number` | `50000` | Maximum tokens of session context to include. |
 | `keybind` | `string \| false` | `"alt+b"` | Global keybind. Set to `false` or `"none"` to disable. |
+| `allowedTools` | `string[] \| null` | `null` | Tools the mini session agent can use. See [Tool access](#tool-access). |
+
+## Tool access
+
+By default the mini session has access to read-only tools: `glob`, `grep`, `list`, `read`, `webfetch`. Use the `allowedTools` config option to change this:
+
+- `null` or omitted: use the default tools listed above
+- `[]`: disable all tools
+- `["bash", "edit", "read"]`: only the listed tools
+- `["*"]`: enable all available tools
+
+To see available tool names, run `opencode debug agent general` and check the `tools` object in the output.
 
 ## Session context
 
@@ -72,13 +85,3 @@ The mini session receives the main session's conversation as plain text:
 - Tool calls summarized inline (name + up to 4 input params, e.g. `[tool: read path=src/foo.ts]`)
 
 Oldest messages are dropped to fit the `tokenLimit`, and the result is injected into the system prompt inside `<session-context>` tags.
-
-## Safe tools
-
-The ephemeral session always uses these read-only tools:
-
-- `glob` - file pattern matching
-- `grep` - content search
-- `read` - file reading
-- `list` - directory listing
-- `webfetch` - URL fetching
