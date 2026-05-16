@@ -126,6 +126,10 @@ export async function startQuestion(
   const hide = () => {
     if (closed || hidden) return;
     hidden = true;
+    if (renderTimer) {
+      clearTimeout(renderTimer);
+      renderTimer = undefined;
+    }
     setOverlay(undefined);
   };
 
@@ -161,7 +165,8 @@ export async function startQuestion(
     const answer =
       extractAssistantText(dialogState.entries) ||
       dialogState.streamingAnswer.trim();
-    if (continuing || dialogState.loading || dialogState.error || !answer) return;
+    if (continuing || dialogState.loading || dialogState.error || !answer)
+      return;
     continuing = true;
 
     try {
@@ -197,13 +202,6 @@ export async function startQuestion(
       title,
       modelName,
       state: dialogState,
-      canContinue:
-        !dialogState.loading &&
-        !dialogState.error &&
-        Boolean(
-          extractAssistantText(dialogState.entries) ||
-            dialogState.streamingAnswer.trim(),
-        ),
       onScroller: (scroller) => {
         overlayScroller = scroller;
       },

@@ -2,6 +2,7 @@
 import { type ScrollBoxRenderable } from "@opentui/core";
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
 import type { Part } from "@opencode-ai/sdk/v2";
+import { createMemo, Show } from "solid-js";
 import { THINKING_TEXT } from "../constants";
 import type { AnswerDialogProps, AnswerDialogState, OverlayState } from "../types";
 import { extractAssistantText } from "../session";
@@ -35,12 +36,26 @@ export function AnswerDialog(props: AnswerDialogProps) {
   const transcriptWidth = Math.max(20, panelWidth - 8);
   const transcriptContentWidth = Math.max(20, transcriptWidth - 5);
 
-  const messages = buildMiniMessages(props.state);
-  const estimatedContentHeight =
-    estimateMiniMessagesHeight(messages, props.state, transcriptContentWidth) + 4;
-  const contentOverflows = estimatedContentHeight > transcriptHeight - 2;
-  const showScrollbar =
-    (props.state.scrollbarVisible || contentOverflows) && !props.state.loading;
+  const messages = createMemo(() => buildMiniMessages(props.state));
+  const estimatedContentHeight = createMemo(
+    () =>
+      estimateMiniMessagesHeight(messages(), props.state, transcriptContentWidth) + 4,
+  );
+  const contentOverflows = createMemo(
+    () => estimatedContentHeight() > transcriptHeight - 2,
+  );
+  const showScrollbar = createMemo(
+    () => props.state.scrollbarVisible || contentOverflows(),
+  );
+  const canContinue = createMemo(
+    () =>
+      !props.state.loading &&
+      !props.state.error &&
+      Boolean(
+        extractAssistantText(props.state.entries) ||
+          props.state.streamingAnswer.trim(),
+      ),
+  );
 
   return (
     <box
@@ -92,7 +107,7 @@ export function AnswerDialog(props: AnswerDialogProps) {
             width={transcriptWidth}
             scrollY
             stickyScroll={false}
-            verticalScrollbarOptions={{ visible: showScrollbar }}
+            verticalScrollbarOptions={{ visible: showScrollbar() }}
           >
             <box
               flexDirection="column"
@@ -103,8 +118,8 @@ export function AnswerDialog(props: AnswerDialogProps) {
               paddingLeft={2}
               paddingRight={2}
             >
-              {messages.length > 0 ? (
-                messages.map((message) => (
+              {messages().length > 0 ? (
+                messages().map((message) => (
                   <box flexDirection="column" gap={0}>
                     <text
                       fg={
@@ -130,7 +145,7 @@ export function AnswerDialog(props: AnswerDialogProps) {
               {props.state.error ? (
                 <text fg={theme.error}>Error: {props.state.error}</text>
               ) : null}
-              {props.state.loading && messages.length > 0 ? (
+              {props.state.loading && messages().length > 0 ? (
                 <text fg={theme.textMuted}>{THINKING_TEXT}</text>
               ) : null}
               <box height={1} />
@@ -147,7 +162,7 @@ export function AnswerDialog(props: AnswerDialogProps) {
               api={props.api}
               label="Continue In Main Thread"
               primary
-              disabled={!props.canContinue}
+              disabled={!canContinue()}
               onPress={props.onContinue}
             />
             <ActionButton api={props.api} label="Hide" onPress={props.onHide} />
@@ -321,7 +336,21 @@ function getMiniPartColor(
 
 export function createOverlaySlot(getOverlay: () => OverlayState | undefined) {
   return () => {
-    const current = getOverlay();
-    return current ? <AnswerDialog {...current} /> : null;
+    return (
+      <Show when={getOverlay()}>
+        {(current) => (
+          <AnswerDialog
+            api={current().api}
+            title={current().title}
+            modelName={current().modelName}
+            state={current().state}
+            onScroller={current().onScroller}
+            onHide={current().onHide}
+            onClose={current().onClose}
+            onContinue={current().onContinue}
+          />
+        )}
+      </Show>
+    );
   };
 }

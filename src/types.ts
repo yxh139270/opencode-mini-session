@@ -53,15 +53,13 @@ export type AnswerDialogProps = {
   title: string;
   modelName: string;
   state: AnswerDialogState;
-  canContinue: boolean;
   onScroller?: (scroller: ScrollBoxRenderable | undefined) => void;
   onHide: () => void;
   onClose: () => void;
   onContinue: () => void;
 };
 
-export type OverlayState = Omit<AnswerDialogProps, "state"> & {
-  state: AnswerDialogState;
+export type OverlayState = AnswerDialogProps & {
   scrollBy: (delta: number) => void;
   scrollTo: (position: number) => void;
 };
