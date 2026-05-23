@@ -48,6 +48,7 @@ export type AnswerDialogState = {
   scrollbarVisible: boolean;
   notice?: string;
   error?: string;
+  errorDetail?: string;
   messageModels: Record<string, string>;
 };
 

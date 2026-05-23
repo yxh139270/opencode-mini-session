@@ -7,6 +7,7 @@ import type { PermissionRuleset } from "@opencode-ai/sdk/v2";
 import type { Setter } from "solid-js";
 import { DEFAULT_ALLOWED_TOOLS, DEFAULT_KEYBIND } from "./constants";
 import { getSessionEntries, formatFullContext } from "./context";
+import { extractErrorMessage, getErrorMessage } from "./diagnostics";
 import { resolveDefaultModel, formatResolvedModel, type ModelSource } from "./model";
 import type {
   ActiveDialog,
@@ -24,6 +25,11 @@ type ModelSelectValue =
       model: NonNullable<ResolvedModel["model"]>;
       variant?: string;
     };
+
+type ErrorPath =
+  | "promptAsync throw"
+  | "session.error event"
+  | "session.create throw";
 
 const MINI_AGENT = "general";
 const ADDITIONAL_PERMISSION_IDS = [
@@ -114,6 +120,7 @@ export async function startQuestion(
     loading: false,
     scrollbarVisible: false,
     notice: defaultResolvedModel.notice,
+    errorDetail: undefined,
     messageModels: {},
   };
 
@@ -290,6 +297,17 @@ export async function startQuestion(
       scheduleScrollToBottom();
   };
 
+  const setPromptError = (path: ErrorPath, cause: unknown) => {
+    dialogState.error = getErrorMessage(cause);
+    dialogState.errorDetail = buildErrorDetail({
+      path,
+      sessionID: tempSessionID,
+      resolvedModel: getResolvedModel(),
+      toolCount: Object.values(tools).filter(Boolean).length,
+    });
+    dialogState.loading = false;
+  };
+
   const show = () => {
     if (closed) return;
     hidden = false;
@@ -333,9 +351,11 @@ export async function startQuestion(
     }
 
     dialogState.error = undefined;
+    dialogState.errorDetail = undefined;
     dialogState.loading = true;
     dialogState.streamingAnswer = "";
     submissionModelQueue.push(getModelName());
+
     renderOverlay({ focusInput: true });
 
     void (async () => {
@@ -357,8 +377,7 @@ export async function startQuestion(
         );
       } catch (cause) {
         if (closed) return;
-        dialogState.error = getErrorMessage(cause);
-        dialogState.loading = false;
+        setPromptError("promptAsync throw", cause);
         renderOverlay();
       }
     })();
@@ -448,15 +467,13 @@ export async function startQuestion(
     unsubscribers.push(
       api.event.on("session.error", (event) => {
         if (event.properties.sessionID !== tempSessionID) return;
-        dialogState.error = extractErrorMessage(event.properties.error);
-        dialogState.loading = false;
+        setPromptError("session.error event", event.properties.error);
         renderOverlay();
       }),
     );
   } catch (cause) {
     if (closed) return;
-    dialogState.error = getErrorMessage(cause);
-    dialogState.loading = false;
+    setPromptError("session.create throw", cause);
     renderOverlay();
   }
 }
@@ -664,22 +681,17 @@ function buildContinuePrompt(transcript: string) {
   return ["[Context from a mini session]", transcript, "---\n"].join("\n\n");
 }
 
-function extractErrorMessage(error: unknown) {
-  if (error && typeof error === "object") {
-    const data =
-      "data" in error
-        ? (error as { data?: { message?: unknown } }).data
-        : undefined;
-    if (data && typeof data.message === "string" && data.message)
-      return data.message;
-    const name =
-      "name" in error ? (error as { name?: unknown }).name : undefined;
-    if (typeof name === "string" && name) return name;
-  }
-  return "The side question failed.";
-}
-
-function getErrorMessage(cause: unknown) {
-  if (cause instanceof Error && cause.message) return cause.message;
-  return extractErrorMessage(cause);
+function buildErrorDetail(options: {
+  path: ErrorPath;
+  sessionID?: string;
+  resolvedModel: ResolvedModel;
+  toolCount: number;
+}) {
+  return [
+    `Diagnostics: path=${options.path}`,
+    `session=${options.sessionID ?? "pending"}`,
+    `agent=${MINI_AGENT}`,
+    `model=${formatResolvedModel(options.resolvedModel)}`,
+    `tools=${options.toolCount}`,
+  ].join(", ");
 }

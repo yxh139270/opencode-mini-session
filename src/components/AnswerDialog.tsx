@@ -101,6 +101,9 @@ export function AnswerDialog(props: AnswerDialogProps) {
         props.state.streamingAnswer.trim(),
       ),
   );
+  const createUserMessageHint = createMemo(() =>
+    getCreateUserMessageHint(props.state),
+  );
 
   return (
     <box
@@ -205,6 +208,12 @@ export function AnswerDialog(props: AnswerDialogProps) {
               )}
               {props.state.error ? (
                 <text fg={theme.error}>Error: {props.state.error}</text>
+              ) : null}
+              {props.state.errorDetail ? (
+                <text fg={theme.textMuted}>{props.state.errorDetail}</text>
+              ) : null}
+              {createUserMessageHint() ? (
+                <text fg={theme.warning}>{createUserMessageHint()}</text>
               ) : null}
               {props.state.loading && messages().length > 0 ? (
                 <text fg={theme.textMuted}>{THINKING_TEXT}</text>
@@ -374,6 +383,10 @@ function estimateMiniMessagesHeight(
   }
   if (state.error)
     lines += estimateWrappedLines(`Error: ${state.error}`, width);
+  if (state.errorDetail)
+    lines += estimateWrappedLines(state.errorDetail, width);
+  const hint = getCreateUserMessageHint(state);
+  if (hint) lines += estimateWrappedLines(hint, width);
   if (state.notice)
     lines += estimateWrappedLines(`Warning: ${state.notice}`, width);
   if (state.loading && messages.length > 0) lines += 1;
@@ -457,6 +470,13 @@ function getMiniPartColor(
   if (part.type === "tool" && part.status === "running") return theme.info;
   if (part.type === "tool") return theme.textMuted;
   return theme.text;
+}
+
+function getCreateUserMessageHint(state: AnswerDialogState) {
+  const text = [state.error, state.errorDetail].filter(Boolean).join("\n");
+  if (!/SessionPrompt\.createUserMessage|createUserMessage|chat\.message/i.test(text))
+    return undefined;
+  return "Hint: OpenCode failed while creating the user message. A server plugin chat.message hook may be throwing.";
 }
 
 export function createOverlaySlot(getOverlay: () => OverlayState | undefined) {
