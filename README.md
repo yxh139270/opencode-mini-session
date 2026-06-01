@@ -42,15 +42,9 @@ Add to your OpenCode TUI config (`~/.config/opencode/tui.json`):
 ```json
 {
   "plugin": [
-    ["opencode-mini-session", {
-      "model": "some-provider/your-model",
-      "tokenLimit": 50000,
-      "keybind": "alt+b",
-      "agent": null
-    }]
+    "opencode-mini-session"
   ]
 }
-
 ```
 
 OpenCode installs it automatically with Bun on startup.
@@ -66,6 +60,22 @@ All options are optional. Defaults are shown below.
 | `tokenLimit` | `number` | `50000` | Maximum tokens of session context to include. |
 | `keybind` | `string \| false` | `"alt+b"` | Global keybind. Set to `false` or `"none"` to disable. |
 | ~`allowedTools`~ | `string[] \| null` | `null` | Deprecated. Use custom OpenCode agents for custom permissions. |
+
+If you want to customize the plugin, your config should look something like this:
+
+```json
+{
+  "plugin": [
+    ["opencode-mini-session", {
+      "model": "anthropic/claude-sonnet-4.6",
+      "tokenLimit": 10000,
+      "keybind": "alt+m",
+      "agent": "build",
+      ...
+    }]
+  ]
+}
+```
 
 ## Agents and permissions
 
