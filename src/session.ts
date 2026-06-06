@@ -102,6 +102,7 @@ export async function startQuestion(
   const defaultResolvedModel = resolveDefaultModel(
     api.state.provider,
     config.model,
+    config.variant,
     entries,
   );
   const getResolvedModel = () =>
@@ -530,6 +531,7 @@ export function openModelPicker(
   const { model: defaultModel, source: defaultSource } = resolveDefaultModel(
     api.state.provider,
     config.model,
+    config.variant,
     getSessionEntries(api, sessionID),
   );
   const options = buildModelOptions(api, defaultModel, defaultSource);

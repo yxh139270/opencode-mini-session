@@ -57,6 +57,7 @@ All options are optional. Defaults are shown below.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `model` | `string \| null` | `null` | Override model as `providerID/modelID`, for example `"anthropic/claude-sonnet-4.6"`. `null` auto-detects from the current session. |
+| `variant` | `string \| null` | `null` | Optional variant for the configured mini model, for example `"high"`. |
 | `agent` | `string \| null` | `null` | `null` or omitted uses plugin-managed mini mode. A string uses an existing OpenCode agent by name. |
 | `tokenLimit` | `number` | `50000` | Maximum tokens of session context to include. |
 | `keybind` | `string \| false` | `"alt+b"` | Global keybind. Set to `false` or `"none"` to disable. |
@@ -71,6 +72,7 @@ If you want to customize the plugin, your config should look something like this
   "plugin": [
     ["opencode-mini-session", {
       "model": "anthropic/claude-sonnet-4.6",
+      "variant": "high",
       "tokenLimit": 10000,
       "keybind": "alt+m",
       "enableThinking": false,

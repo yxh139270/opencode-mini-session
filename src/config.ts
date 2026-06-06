@@ -11,11 +11,9 @@ export function parseConfig(options: unknown): MiniConfig {
       ? (options as Record<string, unknown>)
       : {};
   return {
-    model:
-      typeof input.model === "string" && input.model.trim()
-        ? input.model.trim()
-        : null,
-    agent: parseAgent(input.agent),
+    model: parseStringOption(input.model),
+    variant: parseStringOption(input.variant),
+    agent: parseStringOption(input.agent),
     tokenLimit: parsePositiveNumber(
       input.tokenLimit,
       DEFAULT_FULL_TOKEN_LIMIT,
@@ -46,7 +44,7 @@ function parseKeybind(value: unknown, fallback: string): string | false {
   return keybind === "none" ? false : keybind;
 }
 
-function parseAgent(value: unknown): string | null {
+function parseStringOption(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 

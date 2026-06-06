@@ -4,6 +4,7 @@ import type { Message, Part } from "@opencode-ai/sdk/v2";
 
 export type MiniConfig = {
   model: string | null;
+  variant: string | null;
   agent: string | null;
   tokenLimit: number;
   keybind: string | false;

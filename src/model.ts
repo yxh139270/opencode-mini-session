@@ -11,11 +11,15 @@ export type ResolvedModelWithSource = {
 
 export function resolveModel(
   modelOverride: string | null,
+  variantOverride: string | null,
   entries: SessionEntry[],
 ): ResolvedModelWithSource {
   if (modelOverride)
     return {
-      model: { model: parseModelOverride(modelOverride) },
+      model: {
+        model: parseModelOverride(modelOverride),
+        ...(variantOverride ? { variant: variantOverride } : {}),
+      },
       source: "config",
     };
 
@@ -63,15 +67,16 @@ export function parseModelOverride(value: string) {
 export function resolveDefaultModel(
   providers: TuiPluginApi["state"]["provider"],
   configuredModel: string | null,
+  configuredVariant: string | null,
   entries: SessionEntry[],
 ): ResolvedModelWithSource {
-  const resolved = resolveModel(configuredModel, entries);
+  const resolved = resolveModel(configuredModel, configuredVariant, entries);
   if (resolved.source !== "config") return resolved;
   if (isAvailableModel(providers, resolved.model)) return resolved;
 
   return {
-    ...resolveModel(null, entries),
-    notice: `Configured mini model ${configuredModel} was not found. The main session model will be used.`,
+    ...resolveModel(null, null, entries),
+    notice: `Configured mini model ${formatResolvedModel(resolved.model)} was not found. The main session model will be used.`,
   };
 }
 
