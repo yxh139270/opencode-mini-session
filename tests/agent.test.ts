@@ -13,6 +13,7 @@ import type { MiniConfig } from "../src/types";
 function config(overrides: Partial<MiniConfig> = {}): MiniConfig {
   return {
     model: null,
+    variant: null,
     agent: null,
     tokenLimit: 50_000,
     keybind: "alt+b",
@@ -57,6 +58,14 @@ describe("config parsing", () => {
     expect(parseConfig({ agent: 123 }).agent).toBeNull();
     expect(parseConfig({ agent: "" }).agent).toBeNull();
     expect(parseConfig({ agent: " build " }).agent).toBe("build");
+  });
+
+  it("parses variant values and normalizes invalid values to null", () => {
+    expect(parseConfig({}).variant).toBeNull();
+    expect(parseConfig({ variant: null }).variant).toBeNull();
+    expect(parseConfig({ variant: 123 }).variant).toBeNull();
+    expect(parseConfig({ variant: "" }).variant).toBeNull();
+    expect(parseConfig({ variant: " fast " }).variant).toBe("fast");
   });
 
   it("tracks when allowedTools was present", () => {
