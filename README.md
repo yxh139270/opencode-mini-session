@@ -1,12 +1,12 @@
 # OpenCode mini session
 
-An OpenCode TUI plugin that opens an interactive mini temporary session for side questions, with full session context and multi-turn conversation.
+An OpenCode TUI plugin that opens interactive temporary mini sessions for side questions, either with injected main-session context or as a fresh no-context thread.
 
 https://github.com/user-attachments/assets/8201b065-2569-41ba-8eb7-ac2abddad2a5
 
 ## What it does
 
-Press `alt+b` (or run `/mini` from the command palette) during any OpenCode session. A popup overlay opens immediately with a text input at the bottom. Type a question and press Enter to send it. The plugin:
+Press `alt+b` for the default mini mode, or `alt+n` for a fresh mini mode with no copied conversation context. You can also run `/mini` or `/mini-fresh` from the command palette during any OpenCode session. A popup overlay opens immediately with a text input at the bottom. Type a question and press Enter to send it. The plugin:
 
 1. Gathers context from the current session (token-limited)
 2. Creates a temporary isolated session with that context
@@ -21,8 +21,10 @@ Press `alt+b` (or run `/mini` from the command palette) during any OpenCode sess
 
 | Key | Action |
 |---|---|
-| `alt+b` (configurable) | Toggle mini session overlay |
-| `/mini` | Open mini session (command palette) |
+| `alt+b` (configurable) | Toggle main mini session overlay |
+| `alt+n` (configurable) | Toggle fresh mini session overlay |
+| `/mini` | Open mini session with copied session context |
+| `/mini-fresh` | Open mini session with no copied session context |
 | `/mini-model` | Change model for future mini sessions |
 
 ### Inside the mini session
@@ -31,7 +33,7 @@ Press `alt+b` (or run `/mini` from the command palette) during any OpenCode sess
 |---|---|
 | `enter` | Send question / follow-up |
 | `shift+enter` | Inject mini transcript into the main thread |
-| `alt+b` (configurable) | Hide overlay (resumable) |
+| `alt+b` or `alt+n` (configurable) | Hide overlay, resumable |
 | `ctrl+t` (configurable) | Toggle thinking blocks |
 | `tab` | Change the model for the next question |
 | `esc` / `ctrl+c` | Cancel and close |
@@ -60,7 +62,8 @@ All options are optional. Defaults are shown below.
 | `variant` | `string \| null` | `null` | Optional variant for the configured mini model, for example `"high"`. |
 | `agent` | `string \| null` | `null` | `null` or omitted uses plugin-managed mini mode. A string uses an existing OpenCode agent by name. |
 | `tokenLimit` | `number` | `50000` | Maximum tokens of session context to include. |
-| `keybind` | `string \| false` | `"alt+b"` | Global keybind. Set to `false` or `"none"` to disable. |
+| `keybind` | `string \| false` | `"alt+b"` | Main mini-session keybind. Set to `false` or `"none"` to disable. |
+| `freshKeybind` | `string \| false` | `"alt+n"` | Fresh mini-session keybind. Set to `false` or `"none"` to disable. |
 | `enableThinking` | `boolean` | `false` | Show thinking blocks collapsed by default. |
 | `toggleThinkingKeybind` | `string \| false` | `"ctrl+t"` | Thinking toggle keybind inside the mini session. Set to `false` or `"none"` to disable. |
 | ~`allowedTools`~ | `string[] \| null` | `null` | Deprecated. Use custom OpenCode agents for custom permissions. |
@@ -75,10 +78,10 @@ If you want to customize the plugin, your config should look something like this
       "variant": "high",
       "tokenLimit": 10000,
       "keybind": "alt+m",
-      "enableThinking": false,
-      "toggleThinkingKeybind": "ctrl+t",
-      "agent": "build",
-      ...
+      "freshKeybind": "alt+f",
+      "enableThinking": true,
+      "toggleThinkingKeybind": "alt+a",
+      "agent": "build"
     }]
   ]
 }
@@ -113,6 +116,8 @@ The mini session receives the main session's conversation as plain text:
 - Tool calls summarized inline (name + up to 4 input params, e.g. `[tool: read path=src/foo.ts]`)
 
 Oldest messages are dropped to fit the `tokenLimit`, and the result is injected into the system prompt inside `<session-context>` tags.
+
+Fresh mini mode skips this copied-context step entirely.
 
 ## Troubleshooting
 

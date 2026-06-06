@@ -1,6 +1,9 @@
 export const PLUGIN_ID = "local.opencode-mini-session";
 
 export const CMD_OPEN = "mini.open";
+export const CMD_OPEN_FRESH = "mini.open-fresh";
+export const CMD_TOGGLE_MAIN = "mini.toggle-main";
+export const CMD_TOGGLE_FRESH = "mini.toggle-fresh";
 export const CMD_HIDE = "mini.hide";
 export const CMD_CLOSE = "mini.close";
 export const CMD_CONTINUE = "mini.continue";
@@ -18,6 +21,7 @@ export const SCROLL_PAGE_DELTA = 14;
 
 export const DEFAULT_FULL_TOKEN_LIMIT = 50_000;
 export const DEFAULT_KEYBIND = "alt+b";
+export const DEFAULT_FRESH_KEYBIND = "alt+n";
 export const DEFAULT_TOGGLE_THINKING_KEYBIND = "ctrl+t";
 export const THINKING_TEXT = "Thinking...";
 

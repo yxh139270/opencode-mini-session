@@ -12,6 +12,7 @@ import {
   buildMiniSystemPrompt,
   formatMiniNotice,
   resolveRuntimeMiniAgent,
+  type ResolvedMiniAgent,
 } from "./agent";
 import { getSessionEntries, formatFullContext } from "./context";
 import { getErrorMessage } from "./diagnostics";
@@ -24,6 +25,7 @@ import type {
   ActiveDialog,
   AnswerDialogState,
   MiniConfig,
+  MiniMode,
   ModelPreferenceState,
   OverlayState,
   ResolvedModel,
@@ -44,16 +46,17 @@ type ErrorPath =
   | "session.create throw";
 
 
-export async function openMiniSession(
+export function openMiniSession(
   api: TuiPluginApi,
   config: MiniConfig,
+  mode: MiniMode,
   setOverlay: Setter<OverlayState | undefined>,
   active: ActiveDialog,
   modelPreference: ModelPreferenceState,
   thinkingPreference: ThinkingPreferenceState,
   openPickerFn: (onAfterSelect: () => void) => void,
   getUpdateWarning?: () => string | undefined,
-) {
+): boolean {
   const currentRoute = api.route.current;
 
   if (currentRoute.name !== "session") {
@@ -61,32 +64,35 @@ export async function openMiniSession(
       variant: "error",
       message: "mini only works inside a session.",
     });
-    return;
+    return false;
   }
 
   const activeDialog = active.get();
   if (activeDialog) {
     activeDialog.show();
-    return;
+    return false;
   }
 
   const { sessionID } = currentRoute.params as { sessionID: string };
   void startQuestion(
     api,
     config,
+    mode,
     sessionID,
     setOverlay,
-      active,
-      modelPreference,
-      thinkingPreference,
-      openPickerFn,
-      getUpdateWarning,
-    );
+    active,
+    modelPreference,
+    thinkingPreference,
+    openPickerFn,
+    getUpdateWarning,
+  );
+  return true;
 }
 
 export async function startQuestion(
   api: TuiPluginApi,
   config: MiniConfig,
+  mode: MiniMode,
   sessionID: string,
   setOverlay: Setter<OverlayState | undefined>,
   active: ActiveDialog,
@@ -96,9 +102,8 @@ export async function startQuestion(
   getUpdateWarning?: () => string | undefined,
 ) {
   const entries = getSessionEntries(api, sessionID);
-  const context = formatFullContext(entries, config.tokenLimit);
-  const resolvedAgent = await resolveRuntimeMiniAgent(api, config);
-  const system = buildMiniSystemPrompt(context, resolvedAgent);
+  const context =
+    mode === "main" ? formatFullContext(entries, config.tokenLimit) : "";
   const defaultResolvedModel = resolveDefaultModel(
     api.state.provider,
     config.model,
@@ -108,8 +113,12 @@ export async function startQuestion(
   const getResolvedModel = () =>
     modelPreference.get() ?? defaultResolvedModel.model;
   const getModelName = () => formatResolvedModel(getResolvedModel());
-  const hideKey = config.keybind;
+  const hideKey = mode === "fresh" ? config.freshKeybind : config.keybind;
+  const hiddenCommand = mode === "fresh" ? "/mini-fresh" : "/mini";
+  const title = mode === "fresh" ? "mini fresh" : "mini session";
   const previousFocus = api.renderer.currentFocusedRenderable;
+  let resolvedAgent: ResolvedMiniAgent;
+  let system = "";
 
   const dialogState: AnswerDialogState = {
     entries: [],
@@ -120,10 +129,7 @@ export async function startQuestion(
     thinkingEnabled: thinkingPreference.get(),
     expandedThinkingPartIDs: {},
     update: getUpdateWarning?.(),
-    notice: formatMiniNotice(
-      defaultResolvedModel.notice,
-      ...resolvedAgent.notices,
-    ),
+    notice: undefined,
     errorDetail: undefined,
     messageModels: {},
   };
@@ -219,7 +225,7 @@ export async function startQuestion(
       variant: "info",
       message: hideKey
         ? `mini hidden. Press ${hideKey} to show it.`
-        : "mini hidden. Run /mini to show it.",
+        : `mini hidden. Run ${hiddenCommand} to show it.`,
       duration: 1000,
     });
   };
@@ -316,7 +322,7 @@ export async function startQuestion(
     if (hidden) return;
     setOverlay({
       api,
-      title: "mini session",
+      title,
       version,
       modelName: getModelName(),
       hideKey,
@@ -381,6 +387,26 @@ export async function startQuestion(
 
   active.set(controller);
   renderOverlay({ focusInput: true });
+
+  try {
+    resolvedAgent = await resolveRuntimeMiniAgent(api, config);
+  } catch (cause) {
+    if (closed) return;
+    api.ui.toast({
+      variant: "error",
+      message: `Failed to open mini session: ${getErrorMessage(cause)}`,
+    });
+    await cleanup();
+    return;
+  }
+
+  if (closed) return;
+  system = buildMiniSystemPrompt(context, resolvedAgent, mode);
+  dialogState.notice = formatMiniNotice(
+    defaultResolvedModel.notice,
+    ...resolvedAgent.notices,
+  );
+  renderOverlay();
 
   function submitPrompt(value: string) {
     const prompt = value.trim();
