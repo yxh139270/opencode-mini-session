@@ -48,7 +48,6 @@ export type PluginManagedMiniAgent = {
   missingAgent?: string;
   unavailableAgent?: string;
   agent: null;
-  allowedTools: string[];
   permission: PermissionRuleset;
   permissionSource: "plugin-managed";
   notices: string[];
@@ -58,7 +57,6 @@ export type CustomMiniAgent = {
   mode: "custom-agent";
   requestedAgent: string;
   agent: string;
-  allowedTools: null;
   permission?: undefined;
   permissionSource: "agent";
   notices: string[];
@@ -149,16 +147,10 @@ export function buildResolvedMiniAgent(
       mode: "custom-agent",
       requestedAgent: mode.requestedAgent,
       agent: mode.agent,
-      allowedTools: null,
       permissionSource: "agent",
       notices: buildMiniAgentNotices(config, mode),
     };
   }
-
-  const allowedTools = resolveCompatibleAllowedTools(
-    config.allowedTools,
-    availableToolIDs,
-  );
 
   return {
     mode: "plugin-managed",
@@ -166,8 +158,7 @@ export function buildResolvedMiniAgent(
     missingAgent: mode.missingAgent,
     unavailableAgent: mode.unavailableAgent,
     agent: null,
-    allowedTools,
-    permission: buildPermissionRules(availableToolIDs, allowedTools),
+    permission: buildPermissionRules(availableToolIDs),
     permissionSource: "plugin-managed",
     notices: buildMiniAgentNotices(config, mode),
   };
@@ -181,7 +172,7 @@ export function buildMiniSystemPrompt(
   const intro = buildMiniSystemIntro(resolved, mode);
   const toolNote =
     resolved.mode === "plugin-managed"
-      ? buildAllowedToolSystemNote(resolved.allowedTools)
+      ? buildToolSystemNote(DEFAULT_ALLOWED_TOOLS)
       : "";
 
   const sessionContext = context.trim()
@@ -258,7 +249,7 @@ export function formatMiniAgentDiagnostics(resolved: ResolvedMiniAgent) {
   }
 
   if (resolved.mode === "plugin-managed") {
-    fields.push(`tools=${resolved.allowedTools.length}`);
+    fields.push(`tools=${DEFAULT_ALLOWED_TOOLS.length}`);
   }
 
   return fields;
@@ -327,44 +318,20 @@ function buildMiniAgentNotices(
     );
   }
 
-  if (config.allowedToolsProvided && config.allowedTools !== null) {
-    notices.push(
-      mode.mode === "custom-agent"
-        ? "allowedTools is deprecated and ignored because agent is configured. Configure permissions on the OpenCode agent instead."
-        : "allowedTools is deprecated and will be removed in the next release. Configure an OpenCode agent with permissions instead.",
-    );
-  }
-
   return notices;
 }
 
-function buildAllowedToolSystemNote(allowedTools: string[]) {
-  return allowedTools.length === 0
-    ? " No tools are available in this session. Do not attempt to use any tools."
-    : ` You may only use the following tools: ${allowedTools.join(", ")}. Do not attempt to use any other tools.`;
+function buildToolSystemNote(tools: string[]) {
+  return ` You may only use the following tools: ${tools.join(", ")}. Do not attempt to use any other tools.`;
 }
 
-// TODO(vNext): remove allowedTools compatibility.
-function resolveCompatibleAllowedTools(
-  allowedTools: string[] | null,
-  availableToolIDs: string[],
-): string[] {
-  if (allowedTools === null) return DEFAULT_ALLOWED_TOOLS;
-  if (allowedTools.includes("*")) return [...availableToolIDs];
-  return [...allowedTools];
-}
-
-// TODO(vNext): remove allowedTools compatibility.
-function buildPermissionRules(
-  toolIDs: string[],
-  allowedTools: string[],
-): PermissionRuleset {
+function buildPermissionRules(toolIDs: string[]): PermissionRuleset {
   const permissionIDs = [
-    ...new Set([...toolIDs, ...ADDITIONAL_PERMISSION_IDS, ...allowedTools]),
+    ...new Set([...toolIDs, ...ADDITIONAL_PERMISSION_IDS, ...DEFAULT_ALLOWED_TOOLS]),
   ];
   return permissionIDs.map((permission) => ({
     permission,
     pattern: "*",
-    action: allowedTools.includes(permission) ? "allow" : "deny",
+    action: DEFAULT_ALLOWED_TOOLS.includes(permission) ? "allow" : "deny",
   }));
 }

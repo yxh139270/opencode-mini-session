@@ -27,8 +27,6 @@ export function parseConfig(options: unknown): MiniConfig {
       input.toggleThinkingKeybind,
       DEFAULT_TOGGLE_THINKING_KEYBIND,
     ),
-    allowedTools: parseAllowedTools(input.allowedTools),
-    allowedToolsProvided: Object.hasOwn(input, "allowedTools"),
   };
 }
 
@@ -48,9 +46,4 @@ function parseKeybind(value: unknown, fallback: string): string | false {
 
 function parseStringOption(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
-}
-
-function parseAllowedTools(value: unknown): string[] | null {
-  if (!Array.isArray(value)) return null;
-  return value.every((item) => typeof item === "string") ? value : null;
 }

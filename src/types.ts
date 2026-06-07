@@ -12,8 +12,6 @@ export type MiniConfig = {
   freshKeybind: string | false;
   enableThinking: boolean;
   toggleThinkingKeybind: string | false;
-  allowedTools: string[] | null;
-  allowedToolsProvided: boolean;
 };
 
 export type MiniMode = "main" | "fresh";

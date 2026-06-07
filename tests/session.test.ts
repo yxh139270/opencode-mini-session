@@ -54,8 +54,6 @@ function config(): MiniConfig {
     freshKeybind: "alt+n",
     enableThinking: false,
     toggleThinkingKeybind: "ctrl+t",
-    allowedTools: null,
-    allowedToolsProvided: false,
   };
 }
 
@@ -139,7 +137,6 @@ function resolvedAgent() {
     mode: "plugin-managed",
     requestedAgent: null,
     agent: null,
-    allowedTools: ["read"],
     permission: [],
     permissionSource: "plugin-managed",
     notices: [],
@@ -217,7 +214,6 @@ describe("openMiniSession", () => {
       mode: "plugin-managed",
       requestedAgent: null,
       agent: null,
-      allowedTools: ["read"],
       permission: [],
       permissionSource: "plugin-managed",
       notices: [],
@@ -381,7 +377,6 @@ describe("startQuestion", () => {
       mode: "plugin-managed",
       requestedAgent: null,
       agent: null,
-      allowedTools: ["read"],
       permission: [],
       permissionSource: "plugin-managed",
       notices: [],
@@ -414,7 +409,6 @@ describe("startQuestion", () => {
       mode: "plugin-managed",
       requestedAgent: null,
       agent: null,
-      allowedTools: ["read"],
       permission: [],
       permissionSource: "plugin-managed",
       notices: [],
@@ -1118,7 +1112,6 @@ describe("startQuestion", () => {
       mode: "plugin-managed",
       requestedAgent: null,
       agent: null,
-      allowedTools: ["read"],
       permission: [],
       permissionSource: "plugin-managed",
       notices: [],

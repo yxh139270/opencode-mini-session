@@ -20,8 +20,6 @@ function config(overrides: Partial<MiniConfig> = {}): MiniConfig {
     freshKeybind: "alt+n",
     enableThinking: false,
     toggleThinkingKeybind: "ctrl+t",
-    allowedTools: null,
-    allowedToolsProvided: false,
     ...overrides,
   };
 }
@@ -67,14 +65,6 @@ describe("config parsing", () => {
     expect(parseConfig({ variant: 123 }).variant).toBeNull();
     expect(parseConfig({ variant: "" }).variant).toBeNull();
     expect(parseConfig({ variant: " fast " }).variant).toBe("fast");
-  });
-
-  it("tracks when allowedTools was present", () => {
-    expect(parseConfig({}).allowedToolsProvided).toBe(false);
-    expect(parseConfig({ allowedTools: null }).allowedToolsProvided).toBe(true);
-    expect(parseConfig({ allowedTools: ["read"] }).allowedToolsProvided).toBe(
-      true,
-    );
   });
 
   it("parses thinking config defaults and explicit values", () => {
@@ -188,31 +178,6 @@ describe("plugin-managed permissions", () => {
     expect(actionFor(resolved.permission, "bash")).toBe("deny");
   });
 
-  it("honors an empty allowedTools list", () => {
-    const resolved = asPluginManaged(
-      resolveMiniAgent(
-        config({ allowedTools: [], allowedToolsProvided: true }),
-        [],
-        availableTools,
-      ),
-    );
-
-    expect(actionFor(resolved.permission, "read")).toBe("deny");
-    expect(actionFor(resolved.permission, "bash")).toBe("deny");
-  });
-
-  it("honors wildcard allowedTools", () => {
-    const resolved = asPluginManaged(
-      resolveMiniAgent(
-        config({ allowedTools: ["*"], allowedToolsProvided: true }),
-        [],
-        availableTools,
-      ),
-    );
-
-    expect(actionFor(resolved.permission, "read")).toBe("allow");
-    expect(actionFor(resolved.permission, "bash")).toBe("allow");
-  });
 });
 
 describe("custom agent behavior", () => {
@@ -225,7 +190,6 @@ describe("custom agent behavior", () => {
 
     expect(resolved.mode).toBe("custom-agent");
     expect(resolved.permission).toBeUndefined();
-    expect(resolved.allowedTools).toBeNull();
   });
 });
 
@@ -334,41 +298,6 @@ describe("payload helpers", () => {
 });
 
 describe("notices and diagnostics", () => {
-  it("warns when allowedTools is used in plugin-managed mode", () => {
-    const resolved = resolveMiniAgent(
-      config({ allowedTools: ["read"], allowedToolsProvided: true }),
-      [],
-      ["read"],
-    );
-
-    expect(resolved.notices.join(" ")).toContain("deprecated");
-  });
-
-  it("warns and ignores allowedTools in custom-agent mode", () => {
-    const resolved = resolveMiniAgent(
-      config({
-        agent: "build",
-        allowedTools: ["read"],
-        allowedToolsProvided: true,
-      }),
-      [agent("build")],
-      ["read"],
-    );
-
-    expect(resolved.notices.join(" ")).toContain("ignored");
-    expect(resolved.permission).toBeUndefined();
-  });
-
-  it("does not warn for explicit null allowedTools", () => {
-    const resolved = resolveMiniAgent(
-      config({ allowedTools: null, allowedToolsProvided: true }),
-      [],
-      ["read"],
-    );
-
-    expect(resolved.notices).toEqual([]);
-  });
-
   it("includes mode, agent, and permission source diagnostics", () => {
     const resolved = resolveMiniAgent(
       config({ agent: "build" }),
