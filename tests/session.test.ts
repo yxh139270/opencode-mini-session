@@ -1,9 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-const { formatFullContext, resolveRuntimeMiniAgent } = vi.hoisted(() => ({
-  formatFullContext: vi.fn(() => "main context"),
-  resolveRuntimeMiniAgent: vi.fn(),
-}));
+const { buildCopiedContext, getSessionEntries, resolveRuntimeMiniAgent } = vi.hoisted(
+  () => ({
+    buildCopiedContext: vi.fn(() => ({
+      text: "main context",
+      usedTokens: 31_000,
+      totalAvailableTokens: 31_000,
+    })),
+    getSessionEntries: vi.fn(() => []),
+    resolveRuntimeMiniAgent: vi.fn(),
+  }),
+);
 
 vi.mock("../src/agent", async () => {
   const actual = await vi.importActual<typeof import("../src/agent")>(
@@ -16,8 +23,8 @@ vi.mock("../src/agent", async () => {
 });
 
 vi.mock("../src/context", () => ({
-  getSessionEntries: vi.fn(() => []),
-  formatFullContext,
+  getSessionEntries,
+  buildCopiedContext,
 }));
 
 import { openMiniSession, startQuestion } from "../src/session";
@@ -55,7 +62,21 @@ function config(): MiniConfig {
 function fakeApi() {
   return {
     state: {
-      provider: [],
+      provider: [
+        {
+          id: "anthropic",
+          name: "Anthropic",
+          models: {
+            "claude-sonnet-4.6": {
+              id: "claude-sonnet-4.6",
+              providerID: "anthropic",
+              name: "Claude Sonnet 4.6",
+              limit: { context: 200_000, output: 8_000 },
+              variants: { fast: {} },
+            },
+          },
+        },
+      ],
       path: { directory: "/tmp/project" },
     },
     renderer: {
@@ -79,6 +100,37 @@ function fakeApi() {
     route: {
       current: { name: "session", params: { sessionID: "session-1" } },
     },
+  } as any;
+}
+
+function assistantEntry(options: {
+  id: string;
+  text: string;
+  inputTokens?: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  completed?: boolean;
+}) {
+  return {
+    info: {
+      id: options.id,
+      role: "assistant",
+      providerID: "anthropic",
+      modelID: "claude-sonnet-4.6",
+      variant: "fast",
+      time: options.completed ? { completed: Date.now() } : {},
+      tokens:
+        options.inputTokens !== undefined
+          ? {
+              input: options.inputTokens,
+              cache: {
+                read: options.cacheReadTokens ?? 0,
+                write: options.cacheWriteTokens ?? 0,
+              },
+            }
+          : undefined,
+    },
+    parts: [{ type: "text", text: options.text }],
   } as any;
 }
 
@@ -133,7 +185,9 @@ async function flushStreamingRender() {
 
 afterEach(() => {
   vi.useRealTimers();
-  formatFullContext.mockClear();
+  buildCopiedContext.mockClear();
+  getSessionEntries.mockReset();
+  getSessionEntries.mockReturnValue([]);
   resolveRuntimeMiniAgent.mockReset();
 });
 
@@ -354,7 +408,7 @@ describe("startQuestion", () => {
     );
 
     await Promise.resolve();
-    expect(formatFullContext).not.toHaveBeenCalled();
+    expect(buildCopiedContext).not.toHaveBeenCalled();
 
     agentResolution.resolve({
       mode: "plugin-managed",
@@ -367,6 +421,664 @@ describe("startQuestion", () => {
     });
 
     await opening;
+  });
+
+  it("shows copied-context usage when main mini opens", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      fakeApi(),
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    expect(overlay?.state.footerCounter).toEqual({
+      copiedContext: {
+        usedTokens: 31_000,
+        totalAvailableTokens: 31_000,
+        tokenLimit: 50_000,
+        text: "main 31.0K",
+        truncated: false,
+      },
+      miniSession: undefined,
+      placeholder: undefined,
+    });
+  });
+
+  it("shows no counter when fresh mini opens", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      fakeApi(),
+      config(),
+      "fresh",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    expect(overlay?.state.footerCounter).toEqual({
+      copiedContext: undefined,
+      miniSession: undefined,
+      placeholder: undefined,
+    });
+  });
+
+  it("stores exact completed input tokens after session idle", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 11_240,
+        completed: true,
+      }),
+    ]);
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: () => ({
+        model: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4.6",
+        },
+        variant: "fast",
+      }),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.lastCompletedMiniInputTokens).toBe(11_240);
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("11.2K (6%)");
+  });
+
+  it("keeps the last completed exact value while a later response streams", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 11_240,
+        completed: true,
+      }),
+    ]);
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: () => ({
+        model: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4.6",
+        },
+        variant: "fast",
+      }),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 11_240,
+        completed: true,
+      }),
+      assistantEntry({ id: "assistant-2", text: "streaming" }),
+    ]);
+
+    handlers["session.next.text.delta"]({
+      properties: { sessionID: "mini-session", delta: "more" },
+    });
+    await flushStreamingRender();
+
+    expect(overlay?.state.lastCompletedMiniInputTokens).toBe(11_240);
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("11.2K (6%)");
+  });
+
+  it("includes cached input tokens after later completed responses", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+    ]);
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: () => ({
+        model: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4.6",
+        },
+        variant: "fast",
+      }),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("5.2K (3%)");
+
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+      assistantEntry({
+        id: "assistant-2",
+        text: "follow up",
+        inputTokens: 94,
+        cacheReadTokens: 5_240,
+        completed: true,
+      }),
+    ]);
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_334);
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("5.3K (3%)");
+  });
+
+  it("treats a lower later input value as a one-time incremental delta", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+    ]);
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: () => ({
+        model: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4.6",
+        },
+        variant: "fast",
+      }),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+      assistantEntry({
+        id: "assistant-2",
+        text: "follow up",
+        inputTokens: 94,
+        completed: true,
+      }),
+    ]);
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    handlers["message.updated"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_334);
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("5.3K (3%)");
+  });
+
+  it.each(["main", "fresh"] as const)(
+    "increments the second completed response once in %s mode when updated before idle",
+    async (mode) => {
+      resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+      const handlers: Record<string, (event: any) => void> = {};
+      const api = fakeApi();
+      (getSessionEntries as any).mockReturnValue([
+        assistantEntry({
+          id: "assistant-1",
+          text: "answer",
+          inputTokens: 5_240,
+          completed: true,
+        }),
+      ]);
+      api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+        handlers[name] = handler;
+        return () => {};
+      });
+      let overlay: OverlayState | undefined;
+      const modelPreference: any = {
+        get: () => ({
+          model: {
+            providerID: "anthropic",
+            modelID: "claude-sonnet-4.6",
+          },
+          variant: "fast",
+        }),
+        set: vi.fn(),
+      };
+
+      await startQuestion(
+        api,
+        config(),
+        mode,
+        "session-1",
+        ((next: OverlayState | undefined) => {
+          overlay = next;
+        }) as any,
+        { get: () => undefined, set: vi.fn() },
+        modelPreference,
+        { get: () => false, set: vi.fn() },
+        vi.fn(),
+      );
+
+      handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+      expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_240);
+
+      (getSessionEntries as any).mockReturnValue([
+        assistantEntry({
+          id: "assistant-1",
+          text: "answer",
+          inputTokens: 5_240,
+          completed: true,
+        }),
+        assistantEntry({
+          id: "assistant-2",
+          text: "follow up",
+          inputTokens: 94,
+          completed: true,
+        }),
+      ]);
+
+      handlers["message.updated"]({ properties: { sessionID: "mini-session" } });
+      handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+      expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_334);
+      expect(overlay?.state.footerCounter.miniSession?.text).toBe("5.3K (3%)");
+    },
+  );
+
+  it.each(["main", "fresh"] as const)(
+    "increments the second completed response once in %s mode when its total equals the previous counter",
+    async (mode) => {
+      resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+      const handlers: Record<string, (event: any) => void> = {};
+      const api = fakeApi();
+      (getSessionEntries as any).mockReturnValue([
+        assistantEntry({
+          id: "assistant-1",
+          text: "answer",
+          inputTokens: 5_240,
+          completed: true,
+        }),
+      ]);
+      api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+        handlers[name] = handler;
+        return () => {};
+      });
+      let overlay: OverlayState | undefined;
+      const modelPreference: any = {
+        get: () => ({
+          model: {
+            providerID: "anthropic",
+            modelID: "claude-sonnet-4.6",
+          },
+          variant: "fast",
+        }),
+        set: vi.fn(),
+      };
+
+      await startQuestion(
+        api,
+        config(),
+        mode,
+        "session-1",
+        ((next: OverlayState | undefined) => {
+          overlay = next;
+        }) as any,
+        { get: () => undefined, set: vi.fn() },
+        modelPreference,
+        { get: () => false, set: vi.fn() },
+        vi.fn(),
+      );
+
+      handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+      (getSessionEntries as any).mockReturnValue([
+        assistantEntry({
+          id: "assistant-1",
+          text: "answer",
+          inputTokens: 5_240,
+          completed: true,
+        }),
+        assistantEntry({
+          id: "assistant-2",
+          text: "follow up",
+          inputTokens: 94,
+          cacheReadTokens: 5_146,
+          completed: true,
+        }),
+      ]);
+
+      handlers["message.updated"]({ properties: { sessionID: "mini-session" } });
+      handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+      expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_334);
+      expect(overlay?.state.footerCounter.miniSession?.text).toBe("5.3K (3%)");
+    },
+  );
+
+  it("updates completed input tokens when cache metadata arrives after idle", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+    ]);
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: () => ({
+        model: {
+          providerID: "anthropic",
+          modelID: "claude-sonnet-4.6",
+        },
+        variant: "fast",
+      }),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+      assistantEntry({
+        id: "assistant-2",
+        text: "follow up",
+        inputTokens: 94,
+        completed: true,
+      }),
+    ]);
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_334);
+
+    (getSessionEntries as any).mockReturnValue([
+      assistantEntry({
+        id: "assistant-1",
+        text: "answer",
+        inputTokens: 5_240,
+        completed: true,
+      }),
+      assistantEntry({
+        id: "assistant-2",
+        text: "follow up",
+        inputTokens: 94,
+        cacheReadTokens: 5_900,
+        completed: true,
+      }),
+    ]);
+
+    handlers["message.updated"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.lastCompletedMiniInputTokens).toBe(5_994);
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("6.0K (3%)");
+  });
+
+  it("recalculates percentages immediately after a model change", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const api = fakeApi();
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: vi.fn(() => undefined),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      (onAfterSelect) => {
+        if (!overlay) return;
+        overlay.state.lastCompletedMiniInputTokens = 100_000;
+        modelPreference.get.mockReturnValue({
+          model: {
+            providerID: "anthropic",
+            modelID: "claude-sonnet-4.6",
+          },
+          variant: "fast",
+        });
+        onAfterSelect();
+      },
+    );
+
+    overlay?.onChangeModel();
+
+    expect(overlay?.state.modelContextWindow).toBe(200_000);
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("100.0K (50%)");
+  });
+
+  it("changes the placeholder only after the exact mini-session value crosses the limit threshold", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const api = fakeApi();
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: vi.fn(() => undefined),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      (onAfterSelect) => {
+        if (!overlay) return;
+        overlay.state.lastCompletedMiniInputTokens = 196_000;
+        modelPreference.get.mockReturnValue({
+          model: {
+            providerID: "anthropic",
+            modelID: "claude-sonnet-4.6",
+          },
+          variant: "fast",
+        });
+        onAfterSelect();
+      },
+    );
+
+    expect(overlay?.state.inputPlaceholder).toBeUndefined();
+
+    overlay?.onChangeModel();
+
+    expect(overlay?.state.inputPlaceholder).toBe(
+      "Session context limit reached...",
+    );
+  });
+
+  it("hides percentages and threshold effects when the model context window is unknown", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const api = fakeApi();
+    let overlay: OverlayState | undefined;
+    const modelPreference: any = {
+      get: vi.fn(() => undefined),
+      set: vi.fn(),
+    };
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      modelPreference,
+      { get: () => false, set: vi.fn() },
+      (onAfterSelect) => {
+        if (!overlay) return;
+        overlay.state.lastCompletedMiniInputTokens = 196_000;
+        modelPreference.get.mockReturnValue({
+          model: {
+            providerID: "openai",
+            modelID: "gpt-5",
+          },
+        });
+        onAfterSelect();
+      },
+    );
+
+    overlay?.onChangeModel();
+
+    expect(overlay?.state.modelContextWindow).toBeUndefined();
+    expect(overlay?.state.footerCounter.miniSession?.text).toBe("196.0K");
+    expect(overlay?.state.footerCounter.miniSession?.warning).toBe(false);
+    expect(overlay?.state.inputPlaceholder).toBeUndefined();
   });
 
   it("uses the fresh keybind in the hide toast", async () => {

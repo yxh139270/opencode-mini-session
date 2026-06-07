@@ -5,6 +5,7 @@ import type {
 } from "@opencode-ai/plugin/tui";
 import type { Setter } from "solid-js";
 import { version } from "../package.json";
+import { buildFooterCounterState } from "./counter";
 import {
   buildMiniErrorDetail,
   buildMiniPromptPayload,
@@ -14,11 +15,12 @@ import {
   resolveRuntimeMiniAgent,
   type ResolvedMiniAgent,
 } from "./agent";
-import { getSessionEntries, formatFullContext } from "./context";
+import { buildCopiedContext, getSessionEntries } from "./context";
 import { getErrorMessage } from "./diagnostics";
 import {
   resolveDefaultModel,
   formatResolvedModel,
+  resolveModelContextWindow,
   type ModelSource,
 } from "./model";
 import type {
@@ -102,8 +104,11 @@ export async function startQuestion(
   getUpdateWarning?: () => string | undefined,
 ) {
   const entries = getSessionEntries(api, sessionID);
-  const context =
-    mode === "main" ? formatFullContext(entries, config.tokenLimit) : "";
+  const copiedContext =
+    mode === "main"
+      ? buildCopiedContext(entries, config.tokenLimit)
+      : { text: "", usedTokens: undefined, totalAvailableTokens: undefined };
+  const context = copiedContext.text;
   const defaultResolvedModel = resolveDefaultModel(
     api.state.provider,
     config.model,
@@ -121,11 +126,18 @@ export async function startQuestion(
   let system = "";
 
   const dialogState: AnswerDialogState = {
+    mode,
     entries: [],
     streamingAnswer: "",
     loading: false,
     scrollbarVisible: false,
     spinnerFrame: 0,
+    copiedContextTokens: copiedContext.usedTokens,
+    copiedContextTotalTokens: copiedContext.totalAvailableTokens,
+    lastCompletedMiniInputTokens: undefined,
+    modelContextWindow: undefined,
+    footerCounter: {},
+    inputPlaceholder: undefined,
     thinkingEnabled: thinkingPreference.get(),
     expandedThinkingPartIDs: {},
     update: getUpdateWarning?.(),
@@ -152,6 +164,24 @@ export async function startQuestion(
   let pendingScrollToBottom = false;
   let lastScrollTop = 0;
   let lastScrollHeight = 0;
+  let currentTokenMessageID: string | undefined;
+  const incrementedTokenMessageIDs = new Set<string>();
+
+  const syncCounterState = () => {
+    dialogState.modelContextWindow = resolveModelContextWindow(
+      api.state.provider,
+      getResolvedModel(),
+    );
+    dialogState.footerCounter = buildFooterCounterState({
+      mode: dialogState.mode,
+      copiedContextTokens: dialogState.copiedContextTokens,
+      copiedContextTotalTokens: dialogState.copiedContextTotalTokens,
+      tokenLimit: config.tokenLimit,
+      lastCompletedMiniInputTokens: dialogState.lastCompletedMiniInputTokens,
+      modelContextWindow: dialogState.modelContextWindow,
+    });
+    dialogState.inputPlaceholder = dialogState.footerCounter.placeholder;
+  };
 
   const clearScrollTimer = () => {
     pendingScrollToBottom = false;
@@ -359,6 +389,7 @@ export async function startQuestion(
 
   const renderOverlay = (options: { focusInput?: boolean } = {}) => {
     if (closed) return;
+    syncCounterState();
     const streamingActive =
       dialogState.loading || Boolean(dialogState.streamingAnswer);
     const currentScrollTop = overlayScroller?.scrollTop ?? 0;
@@ -536,6 +567,31 @@ export async function startQuestion(
     const refreshSession = () => {
       dialogState.entries = getSessionEntries(api, ephemeralSessionID);
       dialogState.streamingAnswer = "";
+      refreshLastCompletedMiniInputTokens();
+    };
+
+    const refreshLastCompletedMiniInputTokens = () => {
+      const latest = getLastCompletedMiniInputUsage(dialogState.entries);
+      if (!latest) return;
+
+      const current = dialogState.lastCompletedMiniInputTokens;
+      if (current === undefined || latest.totalTokens > current) {
+        dialogState.lastCompletedMiniInputTokens = latest.totalTokens;
+        currentTokenMessageID = latest.messageID;
+        return;
+      }
+
+      if (latest.messageID === currentTokenMessageID) {
+        return;
+      }
+
+      if (incrementedTokenMessageIDs.has(latest.messageID)) {
+        return;
+      }
+
+      incrementedTokenMessageIDs.add(latest.messageID);
+      dialogState.lastCompletedMiniInputTokens = current + latest.inputTokens;
+      currentTokenMessageID = latest.messageID;
     };
 
     if (closed) {
@@ -755,4 +811,27 @@ function buildMiniSessionTranscript(state: AnswerDialogState) {
 
 function buildContinuePrompt(transcript: string) {
   return ["[Context from a mini session]", transcript, "---\n"].join("\n\n");
+}
+
+function getLastCompletedMiniInputUsage(entries: AnswerDialogState["entries"]) {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const info = entries[index]?.info;
+    if (info.role !== "assistant") continue;
+    if (!info.time?.completed) continue;
+    if (info.tokens) {
+      return {
+        messageID: info.id,
+        inputTokens: info.tokens.input,
+        totalTokens: getAssistantInputTokens(info.tokens),
+      };
+    }
+  }
+  return undefined;
+}
+
+function getAssistantInputTokens(tokens: {
+  input: number;
+  cache?: { read?: number; write?: number };
+}) {
+  return tokens.input + (tokens.cache?.read ?? 0) + (tokens.cache?.write ?? 0);
 }
