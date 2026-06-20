@@ -19,6 +19,8 @@ Press `alt+b` for the default mini mode, or `alt+n` for a fresh mini mode with n
 
 ## Installation
 
+Requires OpenCode `>=1.14.42`. Older versions do not expose the TUI `api.keymap` API used by this plugin, so commands like `/mini` and keybinds like `alt+b` will not register.
+
 ### Automatic
 
 Just install the plugin with the OpenCode plugin manager:
@@ -131,6 +133,10 @@ Oldest messages are dropped to fit the `tokenLimit`, and the result is injected 
 Fresh mini mode skips this copied-context step entirely.
 
 ## Troubleshooting
+
+### Failed to initialize plugin: `api.keymap.registerLayer`
+
+If startup logs show an error like `undefined is not an object (evaluating 'api.keymap.registerLayer')`, update OpenCode to `>=1.14.42`, then restart OpenCode. This happens on older OpenCode versions that only expose the legacy TUI command and keybind APIs.
 
 ### Force update from older versions
 
