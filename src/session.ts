@@ -1,4 +1,4 @@
-import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
+import type { ScrollBoxRenderable } from "@opentui/core";
 import type {
   TuiDialogSelectOption,
   TuiPluginApi,
@@ -30,6 +30,7 @@ import type {
   MiniMode,
   ModelPreferenceState,
   OverlayState,
+  PromptInputRenderable,
   ResolvedModel,
   ThinkingPreferenceState,
 } from "./types";
@@ -157,11 +158,25 @@ export async function startQuestion(
   let scrollTimer: ReturnType<typeof setTimeout> | undefined;
   let focusTimer: ReturnType<typeof setTimeout> | undefined;
   let spinnerTimer: ReturnType<typeof setInterval> | undefined;
-  let overlayInput: InputRenderable | undefined;
+  let overlayInput: PromptInputRenderable | undefined;
   let overlayScroller: ScrollBoxRenderable | undefined;
   let followStreamingToBottom = true;
   let forceScrollToBottom = true;
   let pendingScrollToBottom = false;
+
+  const readOverlayInput = () => {
+    if (!overlayInput) return "";
+    return overlayInput.plainText;
+  };
+
+  const clearOverlayInput = () => {
+    if (!overlayInput) return;
+    if ("clear" in overlayInput && typeof overlayInput.clear === "function") {
+      overlayInput.clear();
+      return;
+    }
+    overlayInput.setText("");
+  };
   let lastScrollTop = 0;
   let lastScrollHeight = 0;
   let currentTokenMessageID: string | undefined;
@@ -438,9 +453,9 @@ export async function startQuestion(
       scrollBy,
       scrollTo,
       submit: () => {
-        const value = (overlayInput?.value || "").trim();
+        const value = readOverlayInput().trim();
         if (value && !dialogState.loading && submitPrompt(value)) {
-          if (overlayInput) overlayInput.value = "";
+          clearOverlayInput();
         }
       },
     });

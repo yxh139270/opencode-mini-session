@@ -1,4 +1,8 @@
-import type { InputRenderable, ScrollBoxRenderable } from "@opentui/core";
+import type {
+  InputRenderable,
+  ScrollBoxRenderable,
+  TextareaRenderable,
+} from "@opentui/core";
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
 import type { Message, Part } from "@opencode-ai/sdk/v2";
 import type { FooterCounterState } from "./counter";
@@ -84,7 +88,7 @@ export type AnswerDialogProps = {
   toggleThinkingKeybind: string | false;
   state: AnswerDialogState;
   onScroller?: (scroller: ScrollBoxRenderable | undefined) => void;
-  onInput?: (input: InputRenderable | undefined) => void;
+  onInput?: (input: PromptInputRenderable | undefined) => void;
   onHide: () => void;
   onClose: () => void;
   onContinue: () => void;
@@ -93,6 +97,8 @@ export type AnswerDialogProps = {
   onToggleThinkingPart: (partID: string) => void;
   onSubmit: (value: string) => boolean;
 };
+
+export type PromptInputRenderable = InputRenderable | TextareaRenderable;
 
 export type OverlayState = AnswerDialogProps & {
   scrollBy: (delta: number) => void;

@@ -1,6 +1,5 @@
 /** @jsxImportSource @opentui/solid */
 import {
-  type InputRenderable,
   type ScrollBoxRenderable,
   SyntaxStyle,
 } from "@opentui/core";
@@ -12,6 +11,7 @@ import type {
   AnswerDialogProps,
   AnswerDialogState,
   OverlayState,
+  PromptInputRenderable,
 } from "../types";
 import { extractAssistantText } from "../session";
 import { ActionButton } from "./ActionButton";
@@ -81,7 +81,7 @@ export function AnswerDialog(props: AnswerDialogProps) {
   const theme = props.api.theme.current;
   const mdSyntaxStyle = buildSyntaxStyle(theme);
   let scroller: ScrollBoxRenderable | undefined;
-  let input: InputRenderable | undefined;
+  let input: PromptInputRenderable | undefined;
   let inputValue = "";
 
   const screenWidth = props.api.renderer.width;
@@ -138,6 +138,21 @@ export function AnswerDialog(props: AnswerDialogProps) {
       ),
     ),
   );
+
+  const readInputText = () => {
+    if (!input) return inputValue;
+    return input.plainText;
+  };
+
+  const clearInput = () => {
+    inputValue = "";
+    if (!input) return;
+    if ("clear" in input && typeof input.clear === "function") {
+      input.clear();
+      return;
+    }
+    input.setText("");
+  };
 
   return (
     <box
@@ -295,14 +310,16 @@ export function AnswerDialog(props: AnswerDialogProps) {
             paddingLeft={2}
             paddingRight={2}
             paddingBottom={1}
-            justifyContent="space-between"
+            gap={1}
           >
-            <input
+            <textarea
               ref={(node) => {
                 input = node;
                 props.onInput?.(node);
               }}
               width={promptContentWidth}
+              minHeight={1}
+              maxHeight={3}
               placeholder={
                 props.state.inputPlaceholder ??
                 (props.state.loading
@@ -315,15 +332,14 @@ export function AnswerDialog(props: AnswerDialogProps) {
               focusedTextColor={theme.text}
               cursorColor={theme.primary}
               focusedBackgroundColor={theme.borderSubtle}
-              onInput={(value) => {
-                inputValue = value;
+              onContentChange={() => {
+                inputValue = readInputText();
               }}
               onSubmit={() => {
-                const submitted = (input?.value || inputValue).trim();
+                const submitted = readInputText().trim();
                 if (!submitted || props.state.loading) return;
                 if (!props.onSubmit(submitted)) return;
-                inputValue = "";
-                if (input) input.value = "";
+                clearInput();
               }}
             />
             <box
