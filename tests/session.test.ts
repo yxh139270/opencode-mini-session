@@ -1120,6 +1120,111 @@ describe("startQuestion", () => {
     await opening;
   });
 
+  it("hides the mini overlay during a matching permission prompt and restores it after reply", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    const overlays: Array<OverlayState | undefined> = [];
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+        overlays.push(next);
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["permission.asked"]({
+      properties: {
+        sessionID: "mini-session",
+        id: "perm-1",
+        permission: "external_directory",
+      },
+    });
+
+    expect(overlay).toBeUndefined();
+    expect(api.ui.toast).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "mini hidden. Press alt+b to show it.",
+      }),
+    );
+
+    handlers["permission.replied"]({
+      properties: { sessionID: "mini-session", requestID: "perm-1", reply: "once" },
+    });
+
+    expect(overlay).toBeDefined();
+    expect(overlays.at(-1)).toBeDefined();
+  });
+
+  it("waits for all matching permission replies before restoring the mini overlay", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["permission.asked"]({
+      properties: {
+        sessionID: "mini-session",
+        id: "perm-1",
+        permission: "external_directory",
+      },
+    });
+    handlers["permission.asked"]({
+      properties: {
+        sessionID: "mini-session",
+        id: "perm-2",
+        permission: "external_directory",
+      },
+    });
+
+    expect(overlay).toBeUndefined();
+
+    handlers["permission.replied"]({
+      properties: { sessionID: "mini-session", requestID: "perm-1", reply: "once" },
+    });
+
+    expect(overlay).toBeUndefined();
+
+    handlers["permission.replied"]({
+      properties: { sessionID: "mini-session", requestID: "perm-2", reply: "once" },
+    });
+
+    expect(overlay).toBeDefined();
+  });
+
   it("closes and shows an error if agent resolution fails", async () => {
     const api = fakeApi();
     let activeDialog: ActiveDialogController | undefined;

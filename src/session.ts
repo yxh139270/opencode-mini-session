@@ -163,6 +163,8 @@ export async function startQuestion(
   let followStreamingToBottom = true;
   let forceScrollToBottom = true;
   let pendingScrollToBottom = false;
+  let hiddenForPermissionPrompt = false;
+  const pendingPermissionRequestIDs = new Set<string>();
 
   const readOverlayInput = () => {
     if (!overlayInput) return "";
@@ -298,8 +300,9 @@ export async function startQuestion(
     }, 0);
   };
 
-  const hide = () => {
+  const hide = (options: { showToast?: boolean } = {}) => {
     if (closed || hidden) return;
+    const showToast = options.showToast ?? true;
     hidden = true;
     if (renderTimer) {
       clearTimeout(renderTimer);
@@ -310,13 +313,15 @@ export async function startQuestion(
     clearSpinnerTimer();
     setOverlay(undefined);
     restorePreviousFocus();
-    api.ui.toast({
-      variant: "info",
-      message: hideKey
-        ? `mini hidden. Press ${hideKey} to show it.`
-        : `mini hidden. Run ${hiddenCommand} to show it.`,
-      duration: 1000,
-    });
+    if (showToast) {
+      api.ui.toast({
+        variant: "info",
+        message: hideKey
+          ? `mini hidden. Press ${hideKey} to show it.`
+          : `mini hidden. Run ${hiddenCommand} to show it.`,
+        duration: 1000,
+      });
+    }
   };
 
   const closeFromUser = async () => {
@@ -625,10 +630,31 @@ export async function startQuestion(
       return;
     }
 
-    unsubscribers.push(
-      api.event.on("session.idle", (event) => {
-        if (event.properties.sessionID !== tempSessionID) return;
-        const usedModel = submissionModelQueue.shift();
+      unsubscribers.push(
+        api.event.on("permission.asked", (event) => {
+          if (event.properties.sessionID !== tempSessionID) return;
+          pendingPermissionRequestIDs.add(event.properties.id);
+          if (closed || hidden) return;
+          hiddenForPermissionPrompt = true;
+          hide({ showToast: false });
+        }),
+      );
+
+      unsubscribers.push(
+        api.event.on("permission.replied", (event) => {
+          if (event.properties.sessionID !== tempSessionID) return;
+          pendingPermissionRequestIDs.delete(event.properties.requestID);
+          if (pendingPermissionRequestIDs.size > 0) return;
+          if (!hiddenForPermissionPrompt || closed) return;
+          hiddenForPermissionPrompt = false;
+          show();
+        }),
+      );
+
+      unsubscribers.push(
+        api.event.on("session.idle", (event) => {
+          if (event.properties.sessionID !== tempSessionID) return;
+          const usedModel = submissionModelQueue.shift();
         refreshSession();
         if (usedModel) {
           for (const entry of dialogState.entries) {

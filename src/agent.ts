@@ -329,9 +329,15 @@ function buildPermissionRules(toolIDs: string[]): PermissionRuleset {
   const permissionIDs = [
     ...new Set([...toolIDs, ...ADDITIONAL_PERMISSION_IDS, ...DEFAULT_ALLOWED_TOOLS]),
   ];
-  return permissionIDs.map((permission) => ({
-    permission,
-    pattern: "*",
-    action: DEFAULT_ALLOWED_TOOLS.includes(permission) ? "allow" : "deny",
-  }));
+  return permissionIDs.flatMap((permission) => {
+    if (permission === "external_directory") {
+      return [];
+    }
+
+    return {
+      permission,
+      pattern: "*",
+      action: DEFAULT_ALLOWED_TOOLS.includes(permission) ? "allow" : "deny",
+    };
+  });
 }

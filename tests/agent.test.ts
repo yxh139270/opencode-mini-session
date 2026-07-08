@@ -178,6 +178,18 @@ describe("plugin-managed permissions", () => {
     expect(actionFor(resolved.permission, "bash")).toBe("deny");
   });
 
+  it("does not hard-deny external_directory in plugin-managed mode", () => {
+    const resolved = asPluginManaged(
+      resolveMiniAgent(config(), [], availableTools),
+    );
+
+    expect(actionFor(resolved.permission, "external_directory")).not.toBe(
+      "deny",
+    );
+    expect(actionFor(resolved.permission, "edit")).toBe("deny");
+    expect(actionFor(resolved.permission, "bash")).toBe("deny");
+  });
+
 });
 
 describe("custom agent behavior", () => {
