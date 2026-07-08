@@ -89,7 +89,7 @@ export function AnswerDialog(props: AnswerDialogProps) {
   const panelWidth = Math.min(100, Math.floor(screenWidth * 0.85));
   const panelHeight = Math.max(
     14,
-    Math.min(screenHeight - 6, Math.floor(screenHeight * 0.68)),
+    Math.min(screenHeight - 6, Math.floor(screenHeight * 0.85)),
   );
   const transcriptWidth = Math.max(20, panelWidth - 6);
   const promptContentWidth = Math.max(10, transcriptWidth - 6);
