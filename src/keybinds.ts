@@ -25,6 +25,8 @@ import type { MiniConfig, MiniMode, OverlayState } from "./types";
 export type PanelAction = {
   cmd: string;
   key?: string;
+  legacyKey?: string;
+  legacyCmd?: string;
   run: () => void;
 };
 
@@ -50,7 +52,7 @@ export type KeybindContext = {
   openModelPicker: () => void;
 };
 
-export function buildPanelActions(ctx: KeybindContext, legacy = false): PanelAction[] {
+export function buildPanelActions(ctx: KeybindContext): PanelAction[] {
   const { api, config, overlay, modelPickerOpen } = ctx;
 
   const closePanel = () => {
@@ -66,10 +68,17 @@ export function buildPanelActions(ctx: KeybindContext, legacy = false): PanelAct
     { cmd: CMD_HIDE, run: () => overlay()?.onHide() },
     { cmd: CMD_CLOSE, key: "escape", run: closePanel },
     { cmd: CMD_CLOSE, key: "ctrl+c", run: closePanel },
-    { cmd: CMD_CONTINUE, key: "shift+return", run: () => overlay()?.onContinue() },
-    ...(legacy
-      ? [{ cmd: CMD_SUBMIT, key: "return", run: () => overlay()?.submit() }]
-      : []),
+    {
+      cmd: CMD_CONTINUE,
+      key: "shift+return",
+      run: () => overlay()?.onContinue(),
+    },
+    {
+      cmd: CMD_SUBMIT,
+      legacyCmd: CMD_SUBMIT,
+      legacyKey: "return",
+      run: () => overlay()?.submit(),
+    },
     ...(config.toggleThinkingKeybind
       ? [
           {

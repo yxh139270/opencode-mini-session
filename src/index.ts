@@ -6,12 +6,9 @@ import { PLUGIN_ID } from "./constants";
 import {
   buildGlobalCommands,
   buildPanelActions,
-  registerKeymapGlobalLayer,
-  registerKeymapPanelLayer,
-  registerLegacyGlobalCommands,
-  registerLegacyPanelKeybinds,
   type KeybindContext,
 } from "./keybinds";
+import { registerMiniBindings } from "./opencode-compat";
 import { openMiniSession, openModelPicker } from "./session";
 import { resolveMiniRouteAction, runMiniRouteAction } from "./routing";
 import type {
@@ -22,7 +19,6 @@ import type {
   ThinkingPreferenceState,
 } from "./types";
 import { startAutoUpdate } from "./update";
-import { isVersionAtLeast, MIN_KEYMAP_VERSION } from "./version";
 
 const tui: TuiPlugin = async (api, options, meta) => {
   const config = parseConfig(options);
@@ -76,11 +72,6 @@ const tui: TuiPlugin = async (api, options, meta) => {
     slots: { app: createOverlaySlot(overlay) },
   });
 
-  const supportsKeymap = isVersionAtLeast(
-    api.app.version,
-    MIN_KEYMAP_VERSION,
-  );
-
   const ctx: KeybindContext = {
     api,
     config,
@@ -101,24 +92,12 @@ const tui: TuiPlugin = async (api, options, meta) => {
     },
   };
 
-  if (supportsKeymap) {
-    registerKeymapPanelLayer(api, buildPanelActions(ctx), () => Boolean(overlay()));
-    registerKeymapGlobalLayer(api, buildGlobalCommands(ctx));
-  } else if (api.command) {
-    const globalDispose = registerLegacyGlobalCommands(api, buildGlobalCommands(ctx));
-    api.lifecycle.onDispose(globalDispose);
-
-    let panelDispose: (() => void) | undefined;
-    createEffect(() => {
-      if (Boolean(overlay())) {
-        panelDispose = registerLegacyPanelKeybinds(api, buildPanelActions(ctx, true));
-      } else if (panelDispose) {
-        panelDispose();
-        panelDispose = undefined;
-      }
-    });
-    api.lifecycle.onDispose(() => panelDispose?.());
-  }
+  registerMiniBindings({
+    api,
+    panelActions: buildPanelActions(ctx),
+    globalCommands: buildGlobalCommands(ctx),
+    isOverlayOpen: () => Boolean(overlay()),
+  });
 
   async function triggerMiniMode(mode: MiniMode, source: "command" | "keybind") {
     const currentRoute = api.route.current;
