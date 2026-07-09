@@ -78,7 +78,7 @@ describe("answer dialog messages", () => {
       {
         id: "assistant-1",
         role: "assistant",
-        parts: [{ type: "text", text: "still streaming" }],
+        parts: [{ type: "text", text: "still streaming", streaming: true }],
         modelName: undefined,
       },
     ]);
@@ -103,7 +103,7 @@ describe("answer dialog messages", () => {
       {
         id: "assistant-1",
         role: "assistant",
-        parts: [{ type: "text", text: "still streaming" }],
+        parts: [{ type: "text", text: "still streaming", streaming: true }],
         modelName: undefined,
       },
     ]);
@@ -182,7 +182,7 @@ describe("answer dialog messages", () => {
       {
         id: "streaming-assistant",
         role: "assistant",
-        parts: [{ type: "text", text: "second answer streaming" }],
+        parts: [{ type: "text", text: "second answer streaming", streaming: true }],
         modelName: undefined,
       },
     ]);
@@ -262,7 +262,77 @@ describe("answer dialog messages", () => {
         id: "assistant-1",
         role: "assistant",
         modelName: undefined,
-        parts: [{ type: "text", text: "hello world" }],
+        parts: [{ type: "text", text: "hello world", streaming: true }],
+      },
+    ]);
+  });
+
+  it("marks only the last assistant text part as streaming while loading", () => {
+    const runtime = createMiniRuntimeStore();
+    applyMessageUpdated(runtime, { id: "assistant-1", role: "assistant" });
+    applyPartUpdated(runtime, {
+      id: "part-1",
+      messageID: "assistant-1",
+      type: "text",
+      text: "intro",
+    });
+    applyPartUpdated(runtime, {
+      id: "part-2",
+      messageID: "assistant-1",
+      type: "text",
+      text: "streaming tail",
+    });
+
+    const state = createState();
+    state.runtime = runtime.getState();
+    state.loading = true;
+
+    expect(buildMiniMessages(state)).toEqual([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        modelName: undefined,
+        parts: [
+          { type: "text", text: "intro" },
+          { type: "text", text: "streaming tail", streaming: true },
+        ],
+      },
+    ]);
+  });
+
+  it("does not mark a previous assistant answer as streaming during a later user turn", () => {
+    const runtime = createMiniRuntimeStore();
+    applyMessageUpdated(runtime, { id: "assistant-1", role: "assistant" });
+    applyPartUpdated(runtime, {
+      id: "part-1",
+      messageID: "assistant-1",
+      type: "text",
+      text: "formatted answer",
+    });
+    applyMessageUpdated(runtime, { id: "user-2", role: "user" });
+    applyPartUpdated(runtime, {
+      id: "part-2",
+      messageID: "user-2",
+      type: "text",
+      text: "follow-up",
+    });
+
+    const state = createState();
+    state.runtime = runtime.getState();
+    state.loading = true;
+
+    expect(buildMiniMessages(state)).toEqual([
+      {
+        id: "assistant-1",
+        role: "assistant",
+        modelName: undefined,
+        parts: [{ type: "text", text: "formatted answer" }],
+      },
+      {
+        id: "user-2",
+        role: "user",
+        modelName: undefined,
+        parts: [{ type: "text", text: "follow-up" }],
       },
     ]);
   });

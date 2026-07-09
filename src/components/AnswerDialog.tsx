@@ -4,7 +4,7 @@ import {
   SyntaxStyle,
 } from "@opentui/core";
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
-import { createMemo, Show } from "solid-js";
+import { createMemo, Index, Show } from "solid-js";
 import { THINKING_TEXT } from "../constants";
 import type {
   AnswerDialogProps,
@@ -202,59 +202,65 @@ export function AnswerDialog(props: AnswerDialogProps) {
                 <text fg={theme.warning}>{props.state.update}</text>
               ) : null}
               {messages().length > 0 ? (
-                messages().map((message) => (
+                <Index each={messages()}>
+                  {(message) => (
                   <box flexDirection="column" gap={0}>
                     <text
                       fg={
-                        message.role === "assistant"
+                        message().role === "assistant"
                           ? theme.primary
                           : theme.secondary
                       }
                     >
                       <b>
-                        {message.role === "assistant"
-                          ? `assistant [${message.modelName ?? props.modelName}]`
-                          : message.role}
+                        {message().role === "assistant"
+                          ? `assistant [${message().modelName ?? props.modelName}]`
+                          : message().role}
                       </b>
                     </text>
-                    {message.parts.map((part, index) => (
+                    <Index each={message().parts}>
+                      {(part, index) => (
                       <box
                         marginTop={getMiniPartTopMargin(
-                          message.parts,
+                          message().parts,
                           index,
-                          message.role,
+                          message().role,
                         )}
                       >
-                        {part.type === "reasoning" ? (
+                        {part().type === "reasoning" ? (
                           <ThinkingPart
                             api={props.api}
-                            part={part}
+                            part={part()}
                             expanded={isThinkingPartExpanded(
                               props.state,
-                              part,
+                              part(),
                             )}
                             spinnerFrame={props.state.spinnerFrame}
-                            onToggle={() => props.onToggleThinkingPart(part.id)}
+                            onToggle={() => props.onToggleThinkingPart(part().id)}
                           />
-                        ) : message.role === "assistant" &&
-                        part.type === "text" &&
-                        !props.state.loading ? (
+                        ) : message().role === "assistant" && part().type === "text" ? (
                           <markdown
-                            content={part.text}
+                            content={part().text}
                             syntaxStyle={mdSyntaxStyle}
                             fg={theme.markdownText}
-                            streaming={props.state.loading}
+                            bg={theme.backgroundPanel}
+                            streaming={part().streaming}
+                            internalBlockMode="top-level"
+                            tableOptions={{ style: "grid" }}
+                            conceal={false}
                             width={transcriptContentWidth}
                           />
                         ) : (
-                          <text fg={getMiniPartColor(theme, part)}>
-                            {formatMiniPart(part)}
+                          <text fg={getMiniPartColor(theme, part())}>
+                            {formatMiniPart(part())}
                           </text>
                         )}
                       </box>
-                    ))}
+                      )}
+                    </Index>
                   </box>
-                ))
+                  )}
+                </Index>
               ) : props.state.loading ? (
                 <text fg={theme.textMuted}>{THINKING_TEXT}</text>
               ) : (

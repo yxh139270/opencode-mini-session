@@ -3,7 +3,7 @@ import { getMiniRuntimeTranscript } from "../mini-runtime/transcript";
 import type { AnswerDialogState } from "../types";
 
 export type MiniPart =
-  | { type: "text"; text: string }
+  | { type: "text"; text: string; streaming?: boolean }
   | {
       type: "reasoning";
       id: string;
@@ -25,7 +25,10 @@ export function buildMiniMessages(state: AnswerDialogState): MiniMessage[] {
   const legacyMessages = buildLegacyMiniMessages(state, {
     includeStreamingFallback: true,
   });
-  const runtimeMessages = buildRuntimeMiniMessages(state, legacyMessages);
+  const runtimeMessages = markStreamingAssistantTextParts(
+    buildRuntimeMiniMessages(state, legacyMessages),
+    state,
+  );
 
   if (
     runtimeMessages.length > 0 ||
@@ -36,7 +39,7 @@ export function buildMiniMessages(state: AnswerDialogState): MiniMessage[] {
     return runtimeMessages;
   }
 
-  return legacyMessages;
+  return markStreamingAssistantTextParts(legacyMessages, state);
 }
 
 export function extractAssistantTextFromState(state: AnswerDialogState): string {
@@ -148,6 +151,52 @@ function buildRuntimeMiniMessages(
   }
 
   return messages;
+}
+
+function markStreamingAssistantTextParts(
+  messages: MiniMessage[],
+  state: AnswerDialogState,
+) {
+  if (!state.loading) {
+    return messages;
+  }
+
+  const lastMessage = messages[messages.length - 1];
+  if (!lastMessage || lastMessage.role !== "assistant") {
+    return messages;
+  }
+
+  let targetPartIndex = -1;
+  for (let index = lastMessage.parts.length - 1; index >= 0; index -= 1) {
+    if (lastMessage.parts[index]?.type === "text") {
+      targetPartIndex = index;
+      break;
+    }
+  }
+
+  if (targetPartIndex < 0) {
+    return messages;
+  }
+
+  const targetPart = lastMessage.parts[targetPartIndex];
+  if (targetPart?.type !== "text") {
+    return messages;
+  }
+
+  if (targetPart.streaming) {
+    return messages;
+  }
+
+  const nextMessages = [...messages];
+  nextMessages[nextMessages.length - 1] = {
+    ...lastMessage,
+    parts: lastMessage.parts.map((part, partIndex) =>
+      partIndex === targetPartIndex && part.type === "text"
+        ? { ...part, streaming: true }
+        : part,
+    ),
+  };
+  return nextMessages;
 }
 
 function buildLegacyMiniMessages(
