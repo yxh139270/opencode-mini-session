@@ -85,6 +85,9 @@ function fakeApi() {
       toast: vi.fn(),
     },
     client: {
+      tui: {
+        appendPrompt: vi.fn(),
+      },
       session: {
         abort: vi.fn(),
         create: vi.fn(async () => ({ data: { id: "mini-session" } })),
@@ -334,6 +337,1049 @@ describe("startQuestion", () => {
 
     expect(scroller.scrollTo).toHaveBeenCalledTimes(1);
     expect(scroller.scrollTop).toBe(25);
+  });
+
+  it("updates overlay runtime from session next text delta when assistant identifiers are present", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        assistantMessageID: "assistant-1",
+        textID: "text-1",
+        delta: "answer",
+      },
+    });
+    await flushStreamingRender();
+
+    expect(overlay?.state.runtime.rootMessageIds).toEqual(["assistant-1"]);
+    expect(overlay?.state.runtime.messages["assistant-1"]).toEqual({
+      info: {
+        id: "assistant-1",
+        role: "assistant",
+      },
+      parts: [
+        {
+          id: "text-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "answer",
+        },
+      ],
+    });
+    expect(overlay?.state.streamingAnswer).toBe("");
+  });
+
+  it("does not let a stale refresh roll back identified runtime streaming text", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        assistantMessageID: "assistant-1",
+        textID: "text-1",
+        delta: "live answer",
+      },
+    });
+    await flushStreamingRender();
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "live answer",
+      },
+    ]);
+  });
+
+  it("clears the empty-response notice as soon as runtime-only text arrives", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    expect(overlay?.state.emptyResponseNotice).toBe("No response generated.");
+
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        assistantMessageID: "assistant-1",
+        textID: "text-1",
+        delta: "late live answer",
+      },
+    });
+    await flushStreamingRender();
+
+    expect(overlay?.state.emptyResponseNotice).toBeUndefined();
+  });
+
+  it("keeps auto-scroll following runtime-driven streaming even when streamingAnswer stays empty", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+    const scroller = fakeScroller({
+      scrollTop: 30,
+      scrollHeight: 40,
+      viewportHeight: 10,
+    });
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    overlay?.onScroller?.(scroller as any);
+    expect(overlay?.onSubmit("hello")).toBe(true);
+    await flushScrollTimer();
+
+    scroller.scrollHeight += 20;
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        assistantMessageID: "assistant-1",
+        textID: "text-1",
+        delta: "answer",
+      },
+    });
+    await flushStreamingRender();
+
+    expect(overlay?.state.streamingAnswer).toBe("");
+    expect(scroller.scrollTo).toHaveBeenCalledTimes(2);
+    expect(scroller.scrollTop).toBe(50);
+  });
+
+  it("hydrates overlay runtime from refreshed session entries after message updates", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "user-1", role: "user" },
+        parts: [{ type: "text", text: "question" }],
+      },
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "answer" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.runtime.rootMessageIds).toEqual(["user-1", "assistant-1"]);
+    expect(overlay?.state.runtime.messages["user-1"]?.parts).toEqual([
+      {
+        id: "user-1:text:0",
+        messageID: "user-1",
+        type: "text",
+        text: "question",
+      },
+    ]);
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "assistant-1:text:0",
+        messageID: "assistant-1",
+        type: "text",
+        text: "answer",
+      },
+    ]);
+  });
+
+  it("marks overlay runtime idle after session idle", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.runtime.status).toBe("idle");
+  });
+
+  it("continues in the main thread using the runtime-first transcript", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "user-1", role: "user" },
+        parts: [{ type: "text", text: "question" }],
+      },
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "answer" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    await overlay?.onContinue();
+
+    expect(api.client.tui.appendPrompt).toHaveBeenCalledWith(
+      {
+        text: "[Context from a mini session]\n\nuser:\nquestion\n\nassistant:\nanswer\n\n---\n",
+      },
+      { throwOnError: true },
+    );
+  });
+
+  it("does not show the no-response fallback when runtime already contains assistant text", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "answer" }],
+      },
+    ]);
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.streamingAnswer).toBe("");
+    expect(overlay?.state.emptyResponseNotice).toBeUndefined();
+  });
+
+  it("stores the no-response fallback in a dedicated notice field instead of streaming text", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+
+    expect(overlay?.state.emptyResponseNotice).toBe("No response generated.");
+    expect(overlay?.state.streamingAnswer).toBe("");
+  });
+
+  it("clears legacy fallback streaming text once a refreshed final assistant answer is available", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        delta: "partial legacy answer",
+      },
+    });
+    await flushStreamingRender();
+
+    expect(overlay?.state.streamingAnswer).toBe("partial legacy answer");
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "final persisted answer" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.streamingAnswer).toBe("");
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "assistant-1:text:0",
+        messageID: "assistant-1",
+        type: "text",
+        text: "final persisted answer",
+      },
+    ]);
+  });
+
+  it("clears an earlier empty-response notice once persisted assistant text arrives later", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.idle"]({ properties: { sessionID: "mini-session" } });
+    expect(overlay?.state.emptyResponseNotice).toBe("No response generated.");
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "late persisted answer" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.emptyResponseNotice).toBeUndefined();
+  });
+
+  it("does not let stale entries roll back a direct message part text update", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    handlers["message.part.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        part: {
+          id: "text-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "corrected live answer",
+        },
+      },
+    });
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "stale persisted answer" }],
+      },
+    ]);
+
+    handlers["message.part.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        part: {
+          id: "text-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "corrected live answer",
+        },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "corrected live answer",
+      },
+    ]);
+  });
+
+  it("keeps protecting a newer direct runtime text update across repeated stale refreshes", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "stale persisted answer" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    handlers["message.part.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        part: {
+          id: "text-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "corrected live answer",
+        },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "corrected live answer",
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "corrected live answer",
+      },
+    ]);
+  });
+
+  it("accepts a newer persisted correction after protecting an older live text update", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "stale persisted answer" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    handlers["message.part.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        part: {
+          id: "text-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "helo",
+        },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "helo",
+      },
+    ]);
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [{ type: "text", text: "hello" }],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "assistant-1:text:0",
+        messageID: "assistant-1",
+        type: "text",
+        text: "hello",
+      },
+    ]);
+  });
+
+  it("keeps earlier persisted text parts while protecting a later dirty live text part", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [
+          { type: "text", text: "persisted intro" },
+          { type: "text", text: "stale persisted ending" },
+        ],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    handlers["message.part.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        part: {
+          id: "text-live-2",
+          messageID: "assistant-1",
+          type: "text",
+          text: "corrected live ending",
+        },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "assistant-1:text:0",
+        messageID: "assistant-1",
+        type: "text",
+        text: "persisted intro",
+      },
+      {
+        id: "text-live-2",
+        messageID: "assistant-1",
+        type: "text",
+        text: "corrected live ending",
+      },
+    ]);
+  });
+
+  it("keeps a later persisted text segment when a direct live update targets the first segment", async () => {
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [
+          { type: "text", text: "stale persisted intro" },
+          { type: "text", text: "persisted ending" },
+        ],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    handlers["message.part.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        part: {
+          id: "text-live-1",
+          messageID: "assistant-1",
+          type: "text",
+          text: "corrected live intro",
+        },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-live-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "corrected live intro",
+      },
+      {
+        id: "assistant-1:text:1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "persisted ending",
+      },
+    ]);
+  });
+
+  it("keeps later hydrated persisted segments after an identified live text update arrived first", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        assistantMessageID: "assistant-1",
+        textID: "text-live-2",
+        delta: "live ending",
+      },
+    });
+    await flushStreamingRender();
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [
+          { type: "text", text: "persisted intro" },
+          { type: "text", text: "stale ending before live" },
+        ],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "assistant-1:text:0",
+        messageID: "assistant-1",
+        type: "text",
+        text: "persisted intro",
+      },
+      {
+        id: "text-live-2",
+        messageID: "assistant-1",
+        type: "text",
+        text: "live ending",
+      },
+    ]);
+  });
+
+  it("does not resurrect a removed identified live text part after refresh", async () => {
+    vi.useFakeTimers();
+    resolveRuntimeMiniAgent.mockResolvedValue(resolvedAgent());
+
+    const handlers: Record<string, (event: any) => void> = {};
+    const api = fakeApi();
+    api.event.on.mockImplementation((name: string, handler: (event: any) => void) => {
+      handlers[name] = handler;
+      return () => {};
+    });
+    let overlay: OverlayState | undefined;
+
+    await startQuestion(
+      api,
+      config(),
+      "main",
+      "session-1",
+      ((next: OverlayState | undefined) => {
+        overlay = next;
+      }) as any,
+      { get: () => undefined, set: vi.fn() },
+      { get: () => undefined, set: vi.fn() },
+      { get: () => false, set: vi.fn() },
+      vi.fn(),
+    );
+
+    handlers["session.next.text.delta"]({
+      properties: {
+        sessionID: "mini-session",
+        assistantMessageID: "assistant-1",
+        textID: "text-live-1",
+        delta: "live answer",
+      },
+    });
+    await flushStreamingRender();
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([
+      {
+        id: "text-live-1",
+        messageID: "assistant-1",
+        type: "text",
+        text: "live answer",
+      },
+    ]);
+
+    handlers["message.part.removed"]({
+      properties: {
+        sessionID: "mini-session",
+        messageID: "assistant-1",
+        partID: "text-live-1",
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([]);
+
+    (getSessionEntries as any).mockReturnValue([
+      {
+        info: { id: "assistant-1", role: "assistant" },
+        parts: [],
+      },
+    ]);
+
+    handlers["message.updated"]({
+      properties: {
+        sessionID: "mini-session",
+        info: { id: "assistant-1", role: "assistant" },
+      },
+    });
+
+    expect(overlay?.state.runtime.messages["assistant-1"]?.parts).toEqual([]);
   });
 
   it("registers an active controller before agent resolution completes", async () => {

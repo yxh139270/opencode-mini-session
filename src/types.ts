@@ -6,6 +6,7 @@ import type {
 import type { TuiPluginApi } from "@opencode-ai/plugin/tui";
 import type { Message, Part } from "@opencode-ai/sdk/v2";
 import type { FooterCounterState } from "./counter";
+import type { MiniRuntimeStateSnapshot } from "./mini-runtime/types";
 
 export type MiniConfig = {
   model: string | null;
@@ -60,7 +61,9 @@ export type ActiveDialogController = {
 export type AnswerDialogState = {
   mode: MiniMode;
   entries: SessionEntry[];
+  runtime: MiniRuntimeStateSnapshot;
   streamingAnswer: string;
+  emptyResponseNotice?: string;
   loading: boolean;
   scrollbarVisible: boolean;
   spinnerFrame: number;
